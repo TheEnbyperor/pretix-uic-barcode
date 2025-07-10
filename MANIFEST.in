@@ -1,0 +1,5 @@
+recursive-include pretix_uic_barcode/static *
+recursive-include pretix_uic_barcode/templates *
+recursive-include pretix_uic_barcode/locale *
+include LICENSE.md
+exclude .gitlab-ci.yml

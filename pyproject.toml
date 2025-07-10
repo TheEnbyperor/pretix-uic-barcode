@@ -1,0 +1,45 @@
+[project]
+name = "pretix-uic-barcode"
+dynamic = ["version"]
+description = "UIC Barcodes for Pretix tickets"
+readme = "README.rst"
+license = "EUPL-1.2"
+keywords = ["pretix"]
+authors = [
+    {name = "Q Misell", email = "q@magicalcodewit.ch"},
+]
+maintainers = [
+    {name = "Q Misell", email = "q@magicalcodewit.ch"},
+]
+
+dependencies = [
+    "asn1tools",
+    "base45",
+    "ber-tlv",
+]
+
+[project.entry-points."pretix.plugin"]
+pretix_uic_barcode = "pretix_uic_barcode:PretixPluginMeta"
+
+[project.entry-points."distutils.commands"]
+build = "pretix_plugin_build.build:CustomBuild"
+
+[build-system]
+requires = [
+    "setuptools",
+    "pretix-plugin-build",
+]
+
+[project.urls]
+homepage = "https://github.com/TheEnbyperor/pretix-uic-barcode"
+repository = "https://github.com/TheEnbyperor/pretix-uic-barcode"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = {attr = "pretix_uic_barcode.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["pretix*"]
+namespaces = false

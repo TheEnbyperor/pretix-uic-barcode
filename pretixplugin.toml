@@ -1,0 +1,5 @@
+[plugin]
+package = "pretix-uic-barcode"
+modules = [ "pretix_uic_barcode" ]
+marketplace_name = "uic_barcode"
+

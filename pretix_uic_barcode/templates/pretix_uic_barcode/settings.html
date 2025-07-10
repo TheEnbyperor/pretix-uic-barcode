@@ -1,0 +1,31 @@
+{% extends "pretixcontrol/event/settings_base.html" %}
+{% load i18n %}
+{% load bootstrap3 %}
+{% block inside %}
+    <h1>{% trans "UIC Barcode Configuration" %}</h1>
+    <form action="" method="post" class="form-horizontal" enctype="multipart/form-data">
+        {% csrf_token %}
+        {% bootstrap_form_errors form %}
+        <fieldset>
+            <legend>{% trans "General" %}</legend>
+            {% bootstrap_field form.uic_barcode_format layout="control" %}
+            {% bootstrap_field form.uic_barcode_encoding layout="control" %}
+        </fieldset>
+        <fieldset>
+            <legend>{% trans "Security Provider" %}</legend>
+            <p>{% trans "Only one of these is required" %}</p>
+            {% bootstrap_field form.uic_barcode_security_provider_rics layout="control" %}
+            {% bootstrap_field form.uic_barcode_security_provider_ia5 layout="control" %}
+        </fieldset>
+        <fieldset>
+            <legend>{% trans "Signing" %}</legend>
+            {% bootstrap_field form.uic_barcode_key_id layout="control" %}
+            {% bootstrap_field form.uic_barcode_private_key layout="control" %}
+        </fieldset>
+        <div class="form-group submit-group">
+            <button type="submit" class="btn btn-primary btn-save">
+                {% trans "Save" %}
+            </button>
+        </div>
+    </form>
+{% endblock %}
