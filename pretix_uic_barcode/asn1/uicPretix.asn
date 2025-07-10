@@ -16,7 +16,9 @@ ASN-Module-Pretix DEFINITIONS AUTOMATIC TAGS ::= BEGIN
 
     	validUntilYear INTEGER (2016..2269) OPTIONAL,
    		validUntilDay INTEGER (1..366) OPTIONAL,
-   		validUntilTime INTEGER (0..1439) OPTIONAL
+   		validUntilTime INTEGER (0..1439) OPTIONAL,
+
+   		...
    }
 
 END
