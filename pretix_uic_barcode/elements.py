@@ -47,16 +47,18 @@ class BaseBarcodeElementGenerator:
         self.event = event
 
     def generate_element(
-            self, item: Item, variation: ItemVariation = None, subevent: SubEvent = None,
-            attendee_name: str = None, valid_from: datetime.datetime = None, valid_until: datetime.datetime = None
+            self, item: Item, order_datetime: datetime.datetime,
+            variation: ItemVariation = None, subevent: SubEvent = None,
+            attendee_name: str = None, valid_from: datetime.datetime = None, valid_until: datetime.datetime = None,
     ) -> typing.Optional[UICBarcodeElement]:
         raise NotImplementedError()
 
 
 class PretixDataBarcodeElementGenerator(BaseBarcodeElementGenerator):
     def generate_element(
-            self, item: Item, variation: ItemVariation = None, subevent: SubEvent = None,
-            attendee_name: str = None, valid_from: datetime.datetime = None, valid_until: datetime.datetime = None
+            self, item: Item, order_datetime: datetime.datetime,
+            variation: ItemVariation = None, subevent: SubEvent = None,
+            attendee_name: str = None, valid_from: datetime.datetime = None, valid_until: datetime.datetime = None,
     ) -> PretixDataBarcodeElement:
         if valid_from:
             valid_from_utc = valid_from.astimezone(datetime.timezone.utc).timetuple()
@@ -67,10 +69,17 @@ class PretixDataBarcodeElementGenerator(BaseBarcodeElementGenerator):
             valid_until = (valid_until_utc.tm_year, valid_until_utc.tm_yday,
                            (60 * valid_until_utc.tm_hour) + valid_until_utc.tm_min)
 
+        order_datetime_utc = order_datetime.astimezone(datetime.timezone.utc).timetuple()
+        order_datetime = (order_datetime_utc.tm_year, order_datetime_utc.tm_yday,
+                       (60 * order_datetime_utc.tm_hour) + order_datetime_utc.tm_min)
+
         ticket_data = {
             "uniqueId": secrets.token_bytes(8),
             "eventId": self.event.pk,
             "itemId": item.pk,
+            "orderYear": order_datetime[0],
+            "orderDay": order_datetime[1],
+            "orderTime": order_datetime[2],
         }
         if variation:
             ticket_data["variationId"] = variation.pk

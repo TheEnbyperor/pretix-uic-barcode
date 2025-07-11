@@ -1,8 +1,7 @@
 import datetime
 import pathlib
 import base64
-import typing
-
+import binascii
 import zlib
 import ber_tlv.tlv
 import base45
@@ -46,19 +45,30 @@ class UICSecretGenerator(BaseTicketSecretGenerator):
     def _parse(self, secret: str):
         pub_key = self._get_priv_key().public_key()
 
-        if not secret.startswith("UIC:B45:"):
+        if self.event.settings.uic_barcode_format == "raw":
+            try:
+                barcode_bytes = base64.b64decode(secret)
+            except binascii.Error:
+                return None
+        elif self.event.settings.uic_barcode_format == "b45":
+            if not secret.startswith("UIC:B45:"):
+                return None
+            secret = secret[len("UIC:B45:"):]
+            try:
+                barcode_bytes = base45.b45decode(secret)
+            except ValueError:
+                return None
+        else:
             return None
-        secret = secret[len("UIC:B45:"):]
 
         try:
-            barcode_bytes = base64.b64decode(secret)
-
             if barcode_bytes.startswith(b"#UT"):
                 assert isinstance(pub_key, DSAPublicKey)
 
                 if barcode_bytes[3:5] != b"02":
                     return None
-                if int(barcode_bytes[5:9].decode("ascii"), 10) != int(self.event.settings.uic_barcode_security_provider_rics, 10):
+                if int(barcode_bytes[5:9].decode("ascii"), 10) != int(
+                        self.event.settings.uic_barcode_security_provider_rics, 10):
                     return None
                 if barcode_bytes[9:14].decode("ascii").strip() != self.event.settings.uic_barcode_key_id:
                     return None
@@ -94,10 +104,10 @@ class UICSecretGenerator(BaseTicketSecretGenerator):
                 offset = 0
                 records = []
                 while barcode_contents[offset:]:
-                    record_id = barcode_contents[offset:offset+6].decode("ascii")
-                    record_version = int(barcode_contents[offset+6:offset+8].decode("ascii"), 10)
-                    record_data_len = int(barcode_contents[offset+8:offset+12].decode("ascii"), 10)
-                    record_data = barcode_contents[offset+12:offset+record_data_len]
+                    record_id = barcode_contents[offset:offset + 6].decode("ascii")
+                    record_version = int(barcode_contents[offset + 6:offset + 8].decode("ascii"), 10)
+                    record_data_len = int(barcode_contents[offset + 8:offset + 12].decode("ascii"), 10)
+                    record_data = barcode_contents[offset + 12:offset + record_data_len]
                     offset += record_data_len + 12
                     records.append((record_id, record_version, record_data))
 
@@ -115,19 +125,23 @@ class UICSecretGenerator(BaseTicketSecretGenerator):
                     return None
 
                 if self.event.settings.uic_barcode_security_provider_rics and \
-                    barcode_data["level2SignedData"]["level1Data"]["securityProviderNum"] != int(self.event.settings.uic_barcode_security_provider_rics, 10):
+                        barcode_data["level2SignedData"]["level1Data"]["securityProviderNum"] != int(
+                    self.event.settings.uic_barcode_security_provider_rics, 10):
                     return None
                 if self.event.settings.uic_barcode_security_provider_ia5 and \
-                    barcode_data["level2SignedData"]["level1Data"]["securityProviderIA5"] != self.event.settings.uic_barcode_security_provider_ia5:
+                        barcode_data["level2SignedData"]["level1Data"][
+                            "securityProviderIA5"] != self.event.settings.uic_barcode_security_provider_ia5:
                     return None
-                if barcode_data["level2SignedData"]["level1Data"]["keyId"] != int(self.event.settings.uic_barcode_key_id, 10):
+                if barcode_data["level2SignedData"]["level1Data"]["keyId"] != int(
+                        self.event.settings.uic_barcode_key_id, 10):
                     return None
 
                 tbs_bytes = BARCODE_HEADER.encode("Level1DataType", barcode_data["level2SignedData"]["level1Data"])
                 if isinstance(pub_key, DSAPublicKey):
                     pub_key.verify(barcode_data["level2SignedData"]["level1Signature"], tbs_bytes, hashes.SHA256())
                 elif isinstance(pub_key, EllipticCurvePublicKey):
-                    pub_key.verify(barcode_data["level2SignedData"]["level1Signature"], tbs_bytes, ECDSA(hashes.SHA256()))
+                    pub_key.verify(barcode_data["level2SignedData"]["level1Signature"], tbs_bytes,
+                                   ECDSA(hashes.SHA256()))
                 elif isinstance(pub_key, Ed25519PublicKey):
                     pub_key.verify(barcode_data["level2SignedData"]["level1Signature"], tbs_bytes)
                 else:
@@ -166,9 +180,10 @@ class UICSecretGenerator(BaseTicketSecretGenerator):
             subevent: SubEvent = None, attendee_name: str = None,
             valid_from: datetime.datetime = None,
             valid_until: datetime.datetime = None,
+            order_datetime: datetime.datetime = None,
             current_secret: str = None,
             force_invalidate=False
-    ) -> typing.Union[bytes, str]:
+    ) -> str:
         if valid_from:
             valid_from_utc = valid_from.astimezone(datetime.timezone.utc).timetuple()
             valid_from = (valid_from_utc.tm_year, valid_from_utc.tm_yday,
@@ -195,7 +210,9 @@ class UICSecretGenerator(BaseTicketSecretGenerator):
         barcode_elements = []
         for generator in self.barcode_element_generators:
             if elm := generator.generate_element(
-                item, variation, subevent, attendee_name, valid_from, valid_until
+                    item=item, variation=variation, subevent=subevent,
+                    attendee_name=attendee_name, valid_from=valid_from, valid_until=valid_until,
+                    order_datetime=order_datetime,
             ):
                 barcode_elements.append(elm)
 
@@ -242,9 +259,11 @@ class UICSecretGenerator(BaseTicketSecretGenerator):
             }
 
             if self.event.settings.uic_barcode_security_provider_rics:
-                barcode_data["level2SignedData"]["level1Data"]["securityProviderNum"] = int(self.event.settings.uic_barcode_security_provider_rics, 10)
+                barcode_data["level2SignedData"]["level1Data"]["securityProviderNum"] = \
+                    int(self.event.settings.uic_barcode_security_provider_rics, 10)
             elif self.event.settings.uic_barcode_security_provider_ia5:
-                barcode_data["level2SignedData"]["level1Data"]["securityProviderIA5"] = self.event.settings.uic_barcode_security_provider_ia5
+                barcode_data["level2SignedData"]["level1Data"]["securityProviderIA5"] = \
+                    self.event.settings.uic_barcode_security_provider_ia5
 
             for elm in barcode_elements:
                 if record_id := elm.dosipas_record_id():
@@ -315,9 +334,9 @@ class UICSecretGenerator(BaseTicketSecretGenerator):
             raise NotImplementedError()
 
         if self.event.settings.uic_barcode_encoding == "raw":
-            return bytes(barcode_bytes)
+            return base64.b64encode(barcode_bytes).decode("ascii")
         elif self.event.settings.uic_barcode_encoding == "b45":
             barcode_ascii = base45.b45encode(barcode_bytes).decode("ascii")
-            return f"UIC:B45:{barcode_ascii}".encode("ascii")
+            return f"UIC:B45:{barcode_ascii}"
         else:
             raise NotImplementedError()

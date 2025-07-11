@@ -2,7 +2,7 @@ from . import secrets, elements
 from django.dispatch import receiver
 from django.urls import resolve, reverse
 from django.utils.translation import gettext, gettext_lazy as _
-from pretix.base.signals import register_ticket_secret_generators, EventPluginSignal
+from pretix.base.signals import register_ticket_secret_generators, register_ticket_outputs, EventPluginSignal
 from pretix.control.signals import nav_event_settings
 
 register_barcode_element_generators = EventPluginSignal()
@@ -33,3 +33,8 @@ def navbar_settings(sender, request, **kwargs):
 @receiver(register_barcode_element_generators, dispatch_uid="barcode_element_generator_pretix_data")
 def element_generator(sender, **kwargs):
     return [elements.PretixDataBarcodeElementGenerator]
+
+@receiver(register_ticket_outputs, dispatch_uid="output_pdf_uic_barcode")
+def register_ticket_outputs(sender, **kwargs):
+    from .ticket_output import PdfTicketOutput
+    return PdfTicketOutput
