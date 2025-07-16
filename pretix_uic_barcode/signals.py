@@ -1,8 +1,8 @@
-from . import secrets, elements
+from . import secrets, elements, event_settings
 from django.dispatch import receiver
 from django.urls import resolve, reverse
 from django.utils.translation import gettext, gettext_lazy as _
-from pretix.base.signals import register_ticket_secret_generators, register_ticket_outputs, EventPluginSignal
+from pretix.base.signals import register_ticket_secret_generators, register_ticket_outputs, api_event_settings_fields, EventPluginSignal
 from pretix.control.signals import nav_event_settings
 
 register_barcode_element_generators = EventPluginSignal()
@@ -11,6 +11,12 @@ register_barcode_element_generators = EventPluginSignal()
 @receiver(register_ticket_secret_generators, dispatch_uid="ticket_generator_uic_barcode")
 def secret_generator(sender, **kwargs):
     return [secrets.UICSecretGenerator]
+
+
+@receiver(api_event_settings_fields, dispatch_uid="api_event_settings_uic_barcode")
+def api_settings(sender, **kwargs):
+    return event_settings.event_settings_fields()
+
 
 @receiver(nav_event_settings, dispatch_uid="nav_settings_uic_barcode")
 def navbar_settings(sender, request, **kwargs):
