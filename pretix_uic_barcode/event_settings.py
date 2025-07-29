@@ -26,7 +26,7 @@ class UICSecurityProviderField(serializers.Field):
     @staticmethod
     def get_attribute(instance):
         if instance.uic_barcode_security_provider_rics:
-            return instance.uic_barcode_security_provider_rics
+            return int(instance.uic_barcode_security_provider_rics, 10)
         else:
             return instance.uic_barcode_security_provider_ia5
 
