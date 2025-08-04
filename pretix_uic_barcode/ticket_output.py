@@ -19,6 +19,7 @@ from reportlab.pdfgen.canvas import Canvas
 from pretix.plugins.ticketoutputpdf.models import TicketLayout
 from pretix.plugins.ticketoutputpdf.ticketoutput import PdfTicketOutput as SuperPdfTicketOutput
 from pretix.base.models import Order, OrderPosition
+from . import barcode
 
 
 class IsBytes(reportlab.lib.validators.Validator):
@@ -84,17 +85,18 @@ class AztecCodeWidget(reportlab.graphics.widgetbase.Widget):
 
         return g
 
+
 class Renderer(BaseRenderer):
+    def __init__(self, event, layout, background_file):
+        super().__init__(event, layout, background_file)
+        self.barcode_generator = barcode.UICBarcodeGenerator(self.event)
+
     def _draw_barcodearea(self, canvas: Canvas, op: OrderPosition, order: Order, o: dict):
         content = o.get('content', 'secret')
 
         if content == 'secret':
-            if op.secret.startswith("UIC:B45:"):
-                barcode_type = "qr"
-                content = op.secret
-            else:
-                barcode_type = "aztec"
-                content = base64.b64decode(op.secret)
+            content = self.barcode_generator.generate_barcode(op)
+            barcode_type = "qr" if self.event.settings.uic_barcode_encoding == "b45" else "aztec"
         else:
             content = self._get_text_content(op, order, o)
             barcode_type = "qr"

@@ -1,15 +1,18 @@
 import base64
 import typing
 import base45
-import binascii
 import zlib
 import ber_tlv.tlv
 import pathlib
 import asn1tools
+import inspect
+import datetime
+from django.utils.functional import cached_property
+from pretix.base.models import OrderPosition
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric.dsa import DSAPrivateKey, DSAPublicKey
-from cryptography.hazmat.primitives.asymmetric.ec import ECDSA, EllipticCurvePrivateKey, EllipticCurvePublicKey
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from cryptography.hazmat.primitives.asymmetric.dsa import DSAPrivateKey
+from cryptography.hazmat.primitives.asymmetric.ec import ECDSA, EllipticCurvePrivateKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from . import elements
 
@@ -24,125 +27,21 @@ class UICBarcodeGenerator:
     def _get_priv_key(self):
         return load_pem_private_key(self.event.settings.uic_barcode_private_key.encode(), None)
 
-    def parse(self, secret: str):
-        pub_key = self._get_priv_key().public_key()
+    @cached_property
+    def barcode_element_generators(self) -> list:
+        from .signals import register_barcode_element_generators
 
-        if self.event.settings.uic_barcode_format == "raw":
-            try:
-                barcode_bytes = base64.b64decode(secret)
-            except binascii.Error:
-                return None
-        elif self.event.settings.uic_barcode_format == "b45":
-            if not secret.startswith("UIC:B45:"):
-                return None
-            secret = secret[len("UIC:B45:"):]
-            try:
-                barcode_bytes = base45.b45decode(secret)
-            except ValueError:
-                return None
-        else:
-            return None
+        responses = register_barcode_element_generators.send(self.event)
+        renderers = []
+        for receiver, response in responses:
+            if not isinstance(response, list):
+                response = [response]
+            for p in response:
+                pp = p(self.event)
+                renderers.append(pp)
+        return renderers
 
-        try:
-            if barcode_bytes.startswith(b"#UT"):
-                assert isinstance(pub_key, DSAPublicKey)
-
-                if barcode_bytes[3:5] != b"02":
-                    return None
-                if int(barcode_bytes[5:9].decode("ascii"), 10) != int(
-                        self.event.settings.uic_barcode_security_provider_rics, 10):
-                    return None
-                if barcode_bytes[9:14].decode("ascii").strip() != self.event.settings.uic_barcode_key_id:
-                    return None
-
-                signature, barcode_bytes = barcode_bytes[14:78], barcode_bytes[78:]
-                data_len = int(barcode_bytes[0:4].decode("ascii"), 10)
-                signed_data = barcode_bytes[4:4 + data_len]
-
-                r, s = signature[0:32], signature[32:64]
-
-                r = r.lstrip(b"\x00")
-                s = s.lstrip(b"\x00")
-
-                sig = bytearray([0x30, len(r) + len(s) + 4])
-                if r[0] & 0x80:
-                    sig[1] += 1
-                    sig.extend([0x02, len(r) + 1, 0x00])
-                else:
-                    sig.extend([0x02, len(r)])
-                sig.extend(r)
-                if s[0] & 0x80:
-                    sig[1] += 1
-                    sig.extend([0x02, len(s) + 1, 0x00])
-                else:
-                    sig.extend([0x02, len(s)])
-                sig.extend(s)
-                sig = bytes(sig)
-
-                pub_key.verify(sig, signed_data, hashes.SHA256())
-
-                barcode_contents = zlib.decompress(signed_data)
-
-                offset = 0
-                records = []
-                while barcode_contents[offset:]:
-                    record_id = barcode_contents[offset:offset + 6].decode("ascii")
-                    record_version = int(barcode_contents[offset + 6:offset + 8].decode("ascii"), 10)
-                    record_data_len = int(barcode_contents[offset + 8:offset + 12].decode("ascii"), 10)
-                    record_data = barcode_contents[offset + 12:offset + record_data_len]
-                    offset += record_data_len + 12
-                    records.append((record_id, record_version, record_data))
-
-                ptix_record = next(filter(lambda v: v[0] == "5101PX", records))
-                if not ptix_record:
-                    return None
-                if ptix_record[1] != 1:
-                    return None
-
-                ticket_data = elements.BARCODE_CONTENT.decode("PretixTicket", ptix_record[2])
-                return ticket_data
-            else:
-                barcode_data = BARCODE_HEADER.decode("UicBarcodeHeader", barcode_bytes)
-                if barcode_data["format"] != "U2":
-                    return None
-
-                if self.event.settings.uic_barcode_security_provider_rics and \
-                        barcode_data["level2SignedData"]["level1Data"]["securityProviderNum"] != int(
-                    self.event.settings.uic_barcode_security_provider_rics, 10):
-                    return None
-                if self.event.settings.uic_barcode_security_provider_ia5 and \
-                        barcode_data["level2SignedData"]["level1Data"][
-                            "securityProviderIA5"] != self.event.settings.uic_barcode_security_provider_ia5:
-                    return None
-                if barcode_data["level2SignedData"]["level1Data"]["keyId"] != int(
-                        self.event.settings.uic_barcode_key_id, 10):
-                    return None
-
-                tbs_bytes = BARCODE_HEADER.encode("Level1DataType", barcode_data["level2SignedData"]["level1Data"])
-                if isinstance(pub_key, DSAPublicKey):
-                    pub_key.verify(barcode_data["level2SignedData"]["level1Signature"], tbs_bytes, hashes.SHA256())
-                elif isinstance(pub_key, EllipticCurvePublicKey):
-                    pub_key.verify(barcode_data["level2SignedData"]["level1Signature"], tbs_bytes,
-                                   ECDSA(hashes.SHA256()))
-                elif isinstance(pub_key, Ed25519PublicKey):
-                    pub_key.verify(barcode_data["level2SignedData"]["level1Signature"], tbs_bytes)
-                else:
-                    raise NotImplementedError()
-
-                ptix_record = next(filter(
-                    lambda v: v["dataFormat"] == "_5101PTIX",
-                    barcode_data["level2SignedData"]["level1Data"]["dataSequence"]
-                ))
-                if not ptix_record:
-                    return None
-
-                ticket_data = elements.BARCODE_CONTENT.decode("PretixTicket", ptix_record["data"])
-                return ticket_data
-        except:
-            return None
-
-
-    def generate(self, barcode_elements: typing.List[elements.UICBarcodeElement]):
+    def sign(self, barcode_elements: typing.List[elements.UICBarcodeElement]):
         priv_key = self._get_priv_key()
         if self.event.settings.uic_barcode_format == "dosipas":
             if isinstance(priv_key, DSAPrivateKey):
@@ -261,9 +160,41 @@ class UICBarcodeGenerator:
             raise NotImplementedError()
 
         if self.event.settings.uic_barcode_encoding == "raw":
-            return base64.b64encode(barcode_bytes).decode("ascii")
+            return barcode_bytes
         elif self.event.settings.uic_barcode_encoding == "b45":
             barcode_ascii = base45.b45encode(barcode_bytes).decode("ascii")
-            return f"UIC:B45:{barcode_ascii}"
+            return f"UIC:B45:{barcode_ascii}".encode("ascii")
         else:
             raise NotImplementedError()
+
+    def generate_barcode(
+            self, order_position: OrderPosition = None
+    ) -> bytes:
+        barcode_elements = []
+        for generator in self.barcode_element_generators:
+            kwargs = {}
+            params = inspect.signature(generator.generate_element).parameters
+            if "item" in params:
+                kwargs["item"] = order_position.item
+            if "variation" in params:
+                kwargs["variation"] = order_position.variation
+            if "subevent" in params:
+                kwargs["subevent"] = order_position.subevent
+            if "attendee_name" in params:
+                kwargs["attendee_name"] = order_position.attendee_name
+            if "valid_from" in params:
+                kwargs["valid_from"] = order_position.valid_from
+            if "valid_until" in params:
+                kwargs["valid_until"] = order_position.valid_until
+            if "order_datetime" in params:
+                kwargs["order_datetime"] = order_position.order.datetime.astimezone(datetime.timezone.utc) if order_position.order.datetime else None
+            if "order_position" in params:
+                kwargs["order_position"] = order_position
+            if "order" in params:
+                kwargs["order"] = order_position.order
+            if "organizer" in params:
+                kwargs["organizer"] = order_position.organizer
+            if elm := generator.generate_element(**kwargs):
+                barcode_elements.append(elm)
+
+        return self.sign(barcode_elements)

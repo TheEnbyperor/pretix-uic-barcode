@@ -2,9 +2,8 @@ import datetime
 import asn1tools
 import abc
 import pathlib
-import secrets
 import typing
-from pretix.base.models import Item, ItemVariation, SubEvent
+from pretix.base.models import Item, ItemVariation, SubEvent, OrderPosition
 
 ROOT = pathlib.Path(__file__).parent
 BARCODE_CONTENT = asn1tools.compile_files([ROOT / "asn1" / "uicPretix.asn"], codec="uper")
@@ -46,17 +45,14 @@ class BaseBarcodeElementGenerator:
     def __init__(self, event):
         self.event = event
 
-    def generate_element(
-            self, item: Item, order_datetime: datetime.datetime,
-            variation: ItemVariation = None, subevent: SubEvent = None,
-            attendee_name: str = None, valid_from: datetime.datetime = None, valid_until: datetime.datetime = None,
-    ) -> typing.Optional[UICBarcodeElement]:
+    def generate_element(self, **kwargs) -> typing.Optional[UICBarcodeElement]:
         raise NotImplementedError()
 
 
 class PretixDataBarcodeElementGenerator(BaseBarcodeElementGenerator):
     def generate_element(
             self, item: Item, order_datetime: datetime.datetime,
+            order_position: OrderPosition,
             variation: ItemVariation = None, subevent: SubEvent = None,
             attendee_name: str = None, valid_from: datetime.datetime = None, valid_until: datetime.datetime = None,
     ) -> PretixDataBarcodeElement:
@@ -74,7 +70,7 @@ class PretixDataBarcodeElementGenerator(BaseBarcodeElementGenerator):
                        (60 * order_datetime_utc.tm_hour) + order_datetime_utc.tm_min)
 
         ticket_data = {
-            "uniqueId": secrets.token_bytes(8),
+            "uniqueId": order_position.secret,
             "eventSlug": self.event.slug,
             "itemId": item.pk,
             "orderYear": order_datetime[0],
