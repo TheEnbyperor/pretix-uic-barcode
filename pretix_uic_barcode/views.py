@@ -1,4 +1,5 @@
 from django import forms
+from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.core.exceptions import ValidationError
@@ -9,14 +10,15 @@ from pretix.base.services.tickets import invalidate_cache
 from pretix.base.services.tasks import EventTask
 from pretix.base.secrets import assign_ticket_secret
 from pretix.celery_app import app
-from pretix.control.views.event import (
-    EventSettingsFormView,
-    EventSettingsViewMixin,
-)
+from pretix.control.views.event import EventSettingsFormView, EventSettingsViewMixin
+from pretix.control.permissions import administrator_permission_required
 from cryptography.hazmat.primitives.asymmetric.dsa import DSAPrivateKey
 from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePrivateKey
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key, Encoding, PrivateFormat, NoEncryption
+from cryptography.hazmat.primitives import hashes
+from cryptography import x509
+from . import pkpass
 
 class PrivateKeySettingsWidget(forms.Textarea):
     def __init__(self, attrs=None):
@@ -168,3 +170,18 @@ def regenerate_secrets(event: Event):
             assign_ticket_secret(event, position=op, force_invalidate=False, save=True)
 
     invalidate_cache.apply_async(kwargs={"event": event.pk, "provider": "pdf-uic"})
+
+
+@administrator_permission_required()
+def apple_wallet_csr(request, **kwargs):
+    private_key = pkpass.get_private_key()
+    csr = x509.CertificateSigningRequestBuilder().subject_name(x509.Name([
+        x509.NameAttribute(x509.oid.NameOID.COMMON_NAME, "Pretix"),
+    ])).sign(private_key, hashes.SHA256())
+    res = HttpResponse(
+        csr.public_bytes(Encoding.PEM),
+        content_type="application/pkcs10",
+
+    )
+    res['Content-Disposition'] = 'attachment; filename="apple_wallet.csr"'
+    return res

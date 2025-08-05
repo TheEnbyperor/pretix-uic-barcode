@@ -14,9 +14,13 @@ maintainers = [
 
 dependencies = [
     "asn1tools",
+    "asn1crypto",
     "base45",
     "ber-tlv",
     "aztec-code-generator",
+    "niquests",
+    "cryptography",
+    "idna"
 ]
 
 [project.entry-points."pretix.plugin"]

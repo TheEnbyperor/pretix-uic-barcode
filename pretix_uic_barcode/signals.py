@@ -1,9 +1,16 @@
-from . import secrets, elements, event_settings
+import collections
+
+from django.utils.safestring import mark_safe
+
+from . import secrets, elements, event_settings, ticket_output_pdf, ticket_output_apple_wallet
+from django import forms
 from django.dispatch import receiver
 from django.urls import resolve, reverse
-from django.utils.translation import gettext, gettext_lazy as _
-from pretix.base.signals import register_ticket_secret_generators, register_ticket_outputs, api_event_settings_fields, EventPluginSignal
+from django.utils.translation import gettext_lazy as _
+from pretix.base.signals import register_ticket_secret_generators, register_ticket_outputs, api_event_settings_fields, \
+    register_global_settings, EventPluginSignal
 from pretix.control.signals import nav_event_settings
+from .forms import CertificateFileField
 
 register_barcode_element_generators = EventPluginSignal()
 
@@ -32,15 +39,34 @@ def navbar_settings(sender, request, **kwargs):
                 },
             ),
             "active": url.namespace == "plugins:pretix_uic_barcode"
-            and url.url_name.startswith("settings"),
+                      and url.url_name.startswith("settings"),
         }
     ]
+
 
 @receiver(register_barcode_element_generators, dispatch_uid="barcode_element_generator_pretix_data")
 def element_generator(sender, **kwargs):
     return [elements.PretixDataBarcodeElementGenerator]
 
-@receiver(register_ticket_outputs, dispatch_uid="output_pdf_uic_barcode")
-def register_ticket_outputs(sender, **kwargs):
-    from .ticket_output import PdfTicketOutput
-    return PdfTicketOutput
+
+@receiver(register_ticket_outputs, dispatch_uid="ticket_output_uic_barcode_pdf")
+def register_ticket_output_pdf(sender, **kwargs):
+    return ticket_output_pdf.PdfTicketOutput
+
+
+@receiver(register_ticket_outputs, dispatch_uid="ticket_output_uic_barcode_apple_wallet")
+def register_ticket_outputs_apple_wallet(sender, **kwargs):
+    return ticket_output_apple_wallet.AppleWalletOutput
+
+
+@receiver(register_global_settings, dispatch_uid="uic_barcode_settings")
+def register_global_settings(sender, **kwargs):
+    csr_url = reverse("plugins:pretix_uic_barcode:apple_wallet_csr")
+
+    return collections.OrderedDict([
+        ("uic_barcode_apple_wallet_certificate", CertificateFileField(
+            label=_("Apple Wallet signing certificate"),
+            required=False,
+            help_text=mark_safe(f"Download the CSR for Apple to sign <a href=\"{csr_url}\">here</a>.")
+        ))
+    ])
