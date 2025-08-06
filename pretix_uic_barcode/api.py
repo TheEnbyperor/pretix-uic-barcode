@@ -1,7 +1,9 @@
 import pretix.base.models
+import logging
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_private_key
-from rest_framework import viewsets, serializers
+from rest_framework import viewsets, serializers, status
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 
 class KeySerializer(serializers.Serializer):
@@ -43,3 +45,23 @@ class UICKeyViewSet(viewsets.ViewSet):
             'request': request
         })
         return Response(s.data)
+
+
+class LogSerializer(serializers.Serializer):
+    logs = serializers.ListField(child=serializers.CharField())
+
+
+class AppleLog(APIView):
+    authentication_classes = ()
+    permission_classes = ()
+
+    @staticmethod
+    def post(request):
+        logs = LogSerializer(data=request.data)
+        if logs.is_valid():
+            for log in logs.validated_data["logs"]:
+                logging.warning(log)
+
+            return Response(status=status.HTTP_200_OK)
+        else:
+            return Response(logs.errors, status=status.HTTP_400_BAD_REQUEST)

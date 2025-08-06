@@ -15,6 +15,7 @@ from pretix.base.models import Order, OrderPosition
 from pretix.base.ticketoutput import BaseTicketOutput
 from pretix.multidomain.urlreverse import build_absolute_uri
 from . import pkpass, barcode
+from .forms import PNGImageField
 
 
 def idna_encode_url(url: str):
@@ -40,7 +41,67 @@ class AppleWalletOutput(BaseTicketOutput):
     def settings_form_fields(self) -> dict:
         return collections.OrderedDict(
             list(super().settings_form_fields.items())
-            + [("bg_color", forms.CharField(
+            + [("icon", PNGImageField(
+                label=_("Event icon @ 1x"),
+                help_text="29x29px PNG image",
+                required=False,
+            )), ("icon2x", PNGImageField(
+                label=_("Event icon @ 2x"),
+                help_text="58x58px PNG image",
+                required=False,
+            )), ("icon3x", PNGImageField(
+                label=_("Event icon @ 3x"),
+                help_text="87x87px PNG image",
+                required=False,
+            )), ("logo", PNGImageField(
+                label=_("Event logo @ 1x"),
+                help_text="160x50px PNG image. The allotted space is 160 x 50 points; in most cases it should be narrower.",
+                required=False,
+            )), ("logo2x", PNGImageField(
+                label=_("Event logo @ 2x"),
+                help_text="320x100px PNG image. The allotted space is 160 x 50 points; in most cases it should be narrower.",
+                required=False,
+            )), ("logo3x", PNGImageField(
+                label=_("Event logo @ 3x"),
+                help_text="480x150px PNG image. The allotted space is 160 x 50 points; in most cases it should be narrower.",
+                required=False,
+            )), ("strip", PNGImageField(
+                label=_("Strip image @ 1x"),
+                help_text="375x98px PNG image",
+                required=False,
+            )), ("strip2x", PNGImageField(
+                label=_("Strip image @ 2x"),
+                help_text="750x196px PNG image",
+                required=False,
+            )), ("strip3x", PNGImageField(
+                label=_("Strip image @ 3x"),
+                help_text="1125x294px PNG image",
+                required=False,
+            )), ("thumbnail", PNGImageField(
+                label=_("Thumbnail @ 1x"),
+                help_text="90x90px PNG image",
+                required=False,
+            )), ("thumbnail2x", PNGImageField(
+                label=_("Thumbnail @ 2x"),
+                help_text="180x180px PNG image",
+                required=False,
+            )), ("thumbnail3x", PNGImageField(
+                label=_("Thumbnail @ 3x"),
+                help_text="270x270px PNG image",
+                required=False,
+            )), ("background", PNGImageField(
+                label=_("Background image @ 1x"),
+                help_text="180x220px PNG image",
+                required=False,
+            )), ("background2x", PNGImageField(
+                label=_("Background image @ 2x"),
+                help_text="360x440px PNG image",
+                required=False,
+            )), ("background3x", PNGImageField(
+                label=_("Background image @ 3x"),
+                help_text="540x660px PNG image",
+                required=False,
+            )), ("bg_color", forms.CharField(
                 label=_("Background color"),
                 validators=[
                     RegexValidator(regex="^#[0-9a-fA-F]{6}$", message=_(
@@ -106,7 +167,8 @@ class AppleWalletOutput(BaseTicketOutput):
                 "backFields": []
             },
             "barcodes": [],
-            "voided": bool(position.blocked),
+            "relevantDates": [],
+            "voided": order.state != Order.STATE_PAID,
         }
 
         op_secret = self.barcode_generator.generate_barcode(position)
@@ -136,7 +198,6 @@ class AppleWalletOutput(BaseTicketOutput):
         else:
             date_to = None
 
-        pass_json["relevantDate"] = date_from.isoformat()
         if position.item.admission:
             pass_json["eventTicket"]["auxiliaryFields"].append({
                 "key": "ev-from",
@@ -149,6 +210,10 @@ class AppleWalletOutput(BaseTicketOutput):
 
         if date_to:
             pass_json["expirationDate"] = date_to.isoformat()
+            pass_json["relevantDates"].append({
+                "startDate": date_from.isoformat(),
+                "endDate": date_to.isoformat(),
+            })
             if position.item.admission:
                 pass_json["eventTicket"]["auxiliaryFields"].append({
                     "key": "ev-to",
@@ -158,6 +223,10 @@ class AppleWalletOutput(BaseTicketOutput):
                     "value": date_to.isoformat(),
                     "ignoresTimeZone": True
                 })
+        else:
+            pass_json["relevantDates"].append({
+                "date": date_from.isoformat(),
+            })
 
         pass_json["eventTicket"]["primaryFields"].append({
             "key": "ev-name",
@@ -223,12 +292,42 @@ class AppleWalletOutput(BaseTicketOutput):
         if label_color := self.settings.get("label_color", None):
             pass_json["labelColor"] = label_color
 
-        print(pass_json)
-
-        if icon_file := self.settings.get("icon_file", None):
+        if icon_file := self.settings.get("icon", None):
             pk_pass.add_file("icon.png", default_storage.open(icon_file.name, "rb").read())
+            if icon_2x_file := self.settings.get("icon_2x", None):
+                pk_pass.add_file("icon@2x.png", default_storage.open(icon_2x_file.name, "rb").read())
+            if icon_3x_file := self.settings.get("icon_3x", None):
+                pk_pass.add_file("icon@3x.png", default_storage.open(icon_3x_file.name, "rb").read())
         else:
             pk_pass.add_file("icon.png", open(finders.find("pretix_uic_barcode/icon.png"), "rb").read())
+
+        if logo_file := self.settings.get("logo", None):
+            pk_pass.add_file("logo.png", default_storage.open(logo_file.name, "rb").read())
+        if logo_2x_file := self.settings.get("logo_2x", None):
+            pk_pass.add_file("logo@2x.png", default_storage.open(logo_2x_file.name, "rb").read())
+        if logo_3x_file := self.settings.get("logo_3x", None):
+            pk_pass.add_file("logo@3x.png", default_storage.open(logo_3x_file.name, "rb").read())
+
+        if strip_file := self.settings.get("strip", None):
+            pk_pass.add_file("strip.png", default_storage.open(strip_file.name, "rb").read())
+        if strip_2x_file := self.settings.get("strip_2x", None):
+            pk_pass.add_file("strip@2x.png", default_storage.open(strip_2x_file.name, "rb").read())
+        if strip_3x_file := self.settings.get("strip_3x", None):
+            pk_pass.add_file("strip@3x.png", default_storage.open(strip_3x_file.name, "rb").read())
+
+        if thumbnail_file := self.settings.get("thumbnail", None):
+            pk_pass.add_file("thumbnail.png", default_storage.open(thumbnail_file.name, "rb").read())
+        if thumbnail_2x_file := self.settings.get("thumbnail_2x", None):
+            pk_pass.add_file("thumbnail@2x.png", default_storage.open(thumbnail_2x_file.name, "rb").read())
+        if thumbnail_3x_file := self.settings.get("thumbnail_3x", None):
+            pk_pass.add_file("thumbnail@3x.png", default_storage.open(thumbnail_3x_file.name, "rb").read())
+
+        if background_file := self.settings.get("background", None):
+            pk_pass.add_file("background.png", default_storage.open(background_file.name, "rb").read())
+        if background_2x_file := self.settings.get("background_2x", None):
+            pk_pass.add_file("background@2x.png", default_storage.open(background_2x_file.name, "rb").read())
+        if background_3x_file := self.settings.get("background_3x", None):
+            pk_pass.add_file("background@3x.png", default_storage.open(background_3x_file.name, "rb").read())
 
         pk_pass.add_file("pass.json", json.dumps(pass_json).encode("utf-8"))
         pk_pass.sign(self.signer)

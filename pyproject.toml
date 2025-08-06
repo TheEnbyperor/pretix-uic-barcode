@@ -20,7 +20,8 @@ dependencies = [
     "aztec-code-generator",
     "niquests",
     "cryptography",
-    "idna"
+    "idna",
+    "google-api-python-client"
 ]
 
 [project.entry-points."pretix.plugin"]
