@@ -8,7 +8,6 @@ from pretix.base.forms import SettingsForm, SecretKeySettingsField, SECRET_REDAC
 from pretix.base.models import Event
 from pretix.base.services.tickets import invalidate_cache
 from pretix.base.services.tasks import EventTask
-from pretix.base.secrets import assign_ticket_secret
 from pretix.celery_app import app
 from pretix.control.views.event import EventSettingsFormView, EventSettingsViewMixin
 from pretix.control.permissions import administrator_permission_required
@@ -160,16 +159,14 @@ class SettingsView(EventSettingsViewMixin, EventSettingsFormView):
         )
 
     def form_success(self):
-        regenerate_secrets.apply_async(kwargs={"event": self.request.event.pk})
+        regenerate_tickets.apply_async(kwargs={"event": self.request.event.pk})
 
 
 @app.task(base=EventTask, acks_late=True)
-def regenerate_secrets(event: Event):
-    for order in event.orders.all():
-        for op in order.all_positions.all():
-            assign_ticket_secret(event, position=op, force_invalidate=False, save=True)
-
+def regenerate_tickets(event: Event):
     invalidate_cache.apply_async(kwargs={"event": event.pk, "provider": "pdf-uic"})
+    invalidate_cache.apply_async(kwargs={"event": event.pk, "provider": "apple-wallet-uic"})
+    invalidate_cache.apply_async(kwargs={"event": event.pk, "provider": "google-wallet-uic"})
 
 
 @administrator_permission_required()
