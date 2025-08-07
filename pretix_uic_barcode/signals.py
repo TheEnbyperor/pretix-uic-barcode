@@ -4,13 +4,15 @@ from django.dispatch import receiver
 from django.urls import resolve, reverse
 from django.utils.translation import gettext_lazy as _
 from django import forms
-from pretix.base.signals import register_ticket_secret_generators, register_ticket_outputs, api_event_settings_fields, \
-    register_global_settings, EventPluginSignal
+from pretix.base.signals import EventPluginSignal, register_ticket_secret_generators, register_ticket_outputs, api_event_settings_fields, \
+    register_global_settings, order_approved, order_denied, order_expired, order_modified, order_changed, order_paid
 from pretix.control.signals import nav_event_settings
-from . import secrets, elements, event_settings, ticket_output_pdf, ticket_output_apple_wallet, ticket_output_google_wallet
+from . import secrets, elements, event_settings, ticket_output, ticket_output_pdf, ticket_output_apple_wallet, ticket_output_google_wallet
 from .forms import AppleWalletCertificateFileField
 
 register_barcode_element_generators = EventPluginSignal()
+generate_google_wallet_module = EventPluginSignal()
+generate_apple_wallet_module = EventPluginSignal()
 
 
 @receiver(register_ticket_secret_generators, dispatch_uid="ticket_generator_uic_barcode")
@@ -78,3 +80,33 @@ def register_global_settings(sender, **kwargs):
             widget=forms.Textarea(),
         ))
     ])
+
+
+@receiver(order_paid, dispatch_uid="uic_barcode_order_paid")
+def order_paid(sender, instance, **kwargs):
+    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": instance.pk})
+
+
+@receiver(order_approved, dispatch_uid="uic_barcode_order_approved")
+def order_approved(sender, instance, **kwargs):
+    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": instance.pk})
+
+
+@receiver(order_denied, dispatch_uid="uic_barcode_order_denied")
+def order_denied(sender, instance, **kwargs):
+    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": instance.pk})
+
+
+@receiver(order_expired, dispatch_uid="uic_barcode_order_expired")
+def order_expired(sender, instance, **kwargs):
+    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": instance.pk})
+
+
+@receiver(order_modified, dispatch_uid="uic_barcode_order_modified")
+def order_modified(sender, instance, **kwargs):
+    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": instance.pk})
+
+
+@receiver(order_changed, dispatch_uid="uic_barcode_order_changed")
+def order_changed(sender, instance, **kwargs):
+    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": instance.pk})

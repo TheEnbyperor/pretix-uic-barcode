@@ -1,3 +1,4 @@
+import inspect
 import json
 import typing
 import collections
@@ -7,17 +8,21 @@ import pytz
 import decimal
 from django import forms
 from django.conf import settings
+from django.core.files.storage import default_storage
+from django.core.validators import RegexValidator
 from django.utils import translation
+from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 from pretix.base.models import Order, OrderPosition, SubEvent
 from pretix.base.ticketoutput import BaseTicketOutput
 from pretix.multidomain.urlreverse import build_absolute_uri
 from . import gwallet, barcode
+from .forms import PNGImageField
 
 
 class GoogleWalletOutput(BaseTicketOutput):
     identifier = "google-wallet-uic"
-    verbose_name = "Google Wallet"
+    verbose_name = "Google Wallet - UIC Barcode"
     download_button_icon = "fa-mobile"
     download_button_text = _("Google Wallet")
     multi_download_enabled = True
@@ -30,6 +35,19 @@ class GoogleWalletOutput(BaseTicketOutput):
         self.event_object = self.client.eventticketobject() if self.client else None
         self.barcode_generator = barcode.UICBarcodeGenerator(self.event)
 
+    @cached_property
+    def module_generators(self) -> list:
+        from .signals import generate_google_wallet_module
+
+        responses = generate_google_wallet_module.send(self.event)
+        generators = []
+        for receiver, response in responses:
+            if not isinstance(response, list):
+                response = [response]
+            for p in response:
+                generators.append(p)
+        return generators
+
     @property
     def settings_form_fields(self) -> dict:
         return collections.OrderedDict(
@@ -37,6 +55,24 @@ class GoogleWalletOutput(BaseTicketOutput):
             + [("issuer_id", forms.CharField(
                 label=_("Google Issuer ID"),
                 required=True,
+            )), ("logo", PNGImageField(
+                label=_("Event logo"),
+                required=False,
+            )), ("hero", PNGImageField(
+                label=_("Hero image"),
+                required=False,
+            )), ("bg_color", forms.CharField(
+                label=_("Background color"),
+                validators=[
+                    RegexValidator(regex="^#[0-9a-fA-F]{6}$", message=_(
+                        "Please enter the hexadecimal code of a color, e.g. #990000."
+                    )),
+                ],
+                required=False,
+                widget=forms.TextInput(attrs={
+                    "class": "colorpickerfield no-contrast",
+                    "placeholder": "#RRGGBB",
+                }),
             ))]
         )
 
@@ -65,6 +101,7 @@ class GoogleWalletOutput(BaseTicketOutput):
 
     def _generate_class(self, event):
         issuer_id = self.settings.get("issuer_id")
+        tz = pytz.timezone(event.settings.timezone)
 
         if isinstance(event, SubEvent):
             class_id = f"{issuer_id}.pretix.ticket.{event.event.organizer.slug}.{event.event.slug}.{event.pk}"
@@ -75,7 +112,7 @@ class GoogleWalletOutput(BaseTicketOutput):
             tl_event = event
             uri = build_absolute_uri(event, "presale:event.index")
 
-        return {
+        data = {
             "id": class_id,
             "eventName": self._make_localised_string(event.name),
             "eventId": f"{tl_event.organizer.slug}_{tl_event.slug}",
@@ -88,8 +125,37 @@ class GoogleWalletOutput(BaseTicketOutput):
                 "animationType": "FOIL_SHIMMER"
             },
             "reviewStatus": "underReview",
-            "confirmationCodeLabel": "ORDER_NUMBER"
+            "confirmationCodeLabel": "ORDER_NUMBER",
+            "dateTime": {
+                "start": event.date_from.astimezone(tz).isoformat()
+            }
         }
+
+        if logo_file := event.settings.get("logo", None):
+            data["logo"] = {
+                "sourceUri": {
+                    "uri": default_storage.url(logo_file.name)
+                }
+            }
+        if hero_file := event.settings.get("hero", None):
+            data["heroImage"] = {
+                "sourceUri": {
+                    "uri": default_storage.url(hero_file.name)
+                }
+            }
+        if bg_color := event.settings.get("bg_color", None):
+            data["hexBackgroundColor"] = bg_color
+
+        if event.location:
+            data["venue"] = {
+                "name": self._make_localised_string(event.location),
+            }
+        if event.date_to:
+            data["dateTime"]["end"] = event.date_to.astimezone(tz).isoformat()
+        if event.date_admission:
+            data["dateTime"]["doorsOpen"] = event.date_admission.astimezone(tz).isoformat()
+
+        return data
 
     def get_or_update_class(self, event):
         new_class = self._generate_class(event)
@@ -102,18 +168,17 @@ class GoogleWalletOutput(BaseTicketOutput):
                     body=new_class
                 ).execute()
                 event.settings.set(cache_id, json.dumps(new_class))
-                event.settings.save()
         else:
             self.event_class.insert(body=new_class).execute()
             event.settings.set(cache_id, json.dumps(new_class))
-            event.settings.save()
 
         return new_class["id"]
 
-    def _generate_pass(self, position: OrderPosition):
+    def generate_pass(self, position: OrderPosition, force: bool = True):
         order = position.order
         event = position.subevent or position.order.event
         tz = pytz.timezone(order.event.settings.timezone)
+        default_lang = translation.get_language() or settings.LANGUAGE_CODE
 
         class_id = self.get_or_update_class(event)
         issuer_id = self.settings.get("issuer_id")
@@ -138,11 +203,24 @@ class GoogleWalletOutput(BaseTicketOutput):
             "reservationInfo": {
                 "confirmationCode": order.code
             },
-            "ticketType": self._make_localised_string(position.item.name),
+            "ticketType": {
+                "translatedValues": [{
+                    "language": "k",
+                    "value": f"{v} - {position.variation.name.localize(k)}",
+                } for k, v in position.item.name.data.items()],
+                "defaultValue": {
+                    "language": default_lang,
+                    "value": f"{position.item.name.localize(default_lang)} - {position.variation.name.localize(default_lang)}"
+                }
+            } if position.variation else self._make_localised_string(position.item.name),
             "faceValue": {
                 "currencyCode": event.currency,
                 "micros": int(position.price * decimal.Decimal(1000000))
             },
+            "imageModulesData": [],
+            "textModulesData": [],
+            "valueAddedModuleData": [],
+            "messages": [],
         }
 
         if date_to:
@@ -185,13 +263,31 @@ class GoogleWalletOutput(BaseTicketOutput):
                 "longitude": float(event.geo_lon),
             }]
 
+        for g in self.module_generators:
+            kwargs = {}
+            params = inspect.signature(g).parameters
+            if "order_position" in params:
+                kwargs["order_position"] = position
+            if "order" in params:
+                kwargs["order"] = order
+            for module_type, module_data in g(**kwargs):
+                if module_type == "imageModule":
+                    object_data["imageModulesData"].append(module_data)
+                elif module_type == "textModule":
+                    object_data["textModulesData"].append(module_data)
+                elif module_type == "valueAddedModule":
+                    object_data["valueAddedModuleData"].append(module_data)
+                elif module_type == "message":
+                    object_data["messages"].append(module_data)
+
         try:
             self.event_object.get(resourceId=object_id).execute()
         except googleapiclient.errors.HttpError as e:
             if e.status_code != 404:
                 raise e
             else:
-                self.event_object.insert(body=object_data).execute()
+                if force:
+                    self.event_object.insert(body=object_data).execute()
         else:
             self.event_object.update(resourceId=object_id, body=object_data).execute()
 
@@ -206,7 +302,7 @@ class GoogleWalletOutput(BaseTicketOutput):
             "aud": "google",
             "typ": "savetowallet",
             "payload": {
-                "eventTicketObjects": [self._generate_pass(position)]
+                "eventTicketObjects": [self.generate_pass(position)]
             }
         }
         token = google.auth.jwt.encode(self.signer, claims).decode("utf-8")
@@ -219,7 +315,7 @@ class GoogleWalletOutput(BaseTicketOutput):
             "aud": "google",
             "typ": "savetowallet",
             "payload": {
-                "eventTicketObjects": [self._generate_pass(op) for op in self.get_tickets_to_print(order)]
+                "eventTicketObjects": [self.generate_pass(op) for op in self.get_tickets_to_print(order)]
             }
         }
         token = google.auth.jwt.encode(self.signer, claims).decode("utf-8")

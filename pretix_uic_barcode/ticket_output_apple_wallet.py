@@ -1,3 +1,4 @@
+import inspect
 import json
 import typing
 import collections
@@ -10,11 +11,13 @@ from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.core.files.storage import default_storage
 from django.core.validators import RegexValidator
+from django.utils import timezone
+from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 from pretix.base.models import Order, OrderPosition
 from pretix.base.ticketoutput import BaseTicketOutput
 from pretix.multidomain.urlreverse import build_absolute_uri
-from . import pkpass, barcode
+from . import pkpass, barcode, models
 from .forms import PNGImageField
 
 
@@ -27,7 +30,7 @@ def idna_encode_url(url: str):
 
 class AppleWalletOutput(BaseTicketOutput):
     identifier = "apple-wallet-uic"
-    verbose_name = "Apple Wallet"
+    verbose_name = "Apple Wallet - UIC Barcode"
     download_button_icon = "fa-mobile"
     download_button_text = _("Apple Wallet")
     multi_download_enabled = True
@@ -36,6 +39,19 @@ class AppleWalletOutput(BaseTicketOutput):
         super().__init__(*args, **kwargs)
         self.signer = pkpass.get_signer()
         self.barcode_generator = barcode.UICBarcodeGenerator(self.event)
+
+    @cached_property
+    def module_generators(self) -> list:
+        from .signals import generate_apple_wallet_module
+
+        responses = generate_apple_wallet_module.send(self.event)
+        generators = []
+        for receiver, response in responses:
+            if not isinstance(response, list):
+                response = [response]
+            for p in response:
+                generators.append(p)
+        return generators
 
     @property
     def settings_form_fields(self) -> dict:
@@ -140,18 +156,19 @@ class AppleWalletOutput(BaseTicketOutput):
             ))]
         )
 
-    def _generate_pass(self, position: OrderPosition) -> pkpass.PKPass:
+    def generate_pass(self, position: OrderPosition) -> pkpass.PKPass:
         pk_pass = pkpass.PKPass()
         order = position.order
         event = position.subevent or position.order.event
         tz = pytz.timezone(order.event.settings.timezone)
 
+        pass_serial = f"{order.event.organizer.slug}-{position.code}"
         pass_json = {
             "formatVersion": 1,
             "organizationName": self.signer.pass_signer_name,
             "passTypeIdentifier": self.signer.pass_type_id,
             "teamIdentifier": self.signer.team_id,
-            "serialNumber": f"{order.event.organizer.slug}-{position.code}",
+            "serialNumber": pass_serial,
             "groupingIdentifier": f"{order.event.organizer.slug}-{order.code}",
             "description": str(event.name),
             "suppressStripShine": True,
@@ -168,7 +185,7 @@ class AppleWalletOutput(BaseTicketOutput):
             },
             "barcodes": [],
             "relevantDates": [],
-            "voided": order.state != Order.STATE_PAID,
+            "voided": order.status != Order.STATUS_PAID,
         }
 
         op_secret = self.barcode_generator.generate_barcode(position)
@@ -282,6 +299,7 @@ class AppleWalletOutput(BaseTicketOutput):
         pass_json["eventTicket"]["backFields"].append({
             "key": "website",
             "label": "Website",
+            "value": event_url,
             "attributedValue": f"<a href=\"{event_url}\">{event_url.replace('https://', '')}</a>",
         })
 
@@ -329,12 +347,47 @@ class AppleWalletOutput(BaseTicketOutput):
         if background_3x_file := self.settings.get("background_3x", None):
             pk_pass.add_file("background@3x.png", default_storage.open(background_3x_file.name, "rb").read())
 
+        for g in self.module_generators:
+            kwargs = {}
+            params = inspect.signature(g).parameters
+            if "order_position" in params:
+                kwargs["order_position"] = position
+            if "order" in params:
+                kwargs["order"] = order
+            for module_type, module_data in g(**kwargs):
+                if module_type == "primaryField":
+                    pass_json["eventTicket"]["primaryFields"].append(module_data)
+                elif module_type == "secondaryField":
+                    pass_json["eventTicket"]["secondaryFields"].append(module_data)
+                elif module_type == "auxiliaryField":
+                    pass_json["eventTicket"]["auxiliaryFields"].append(module_data)
+                elif module_type == "headerField":
+                    pass_json["eventTicket"]["headerFields"].append(module_data)
+                elif module_type == "backField":
+                    pass_json["eventTicket"]["backFields"].append(module_data)
+
         pk_pass.add_file("pass.json", json.dumps(pass_json).encode("utf-8"))
+
+        contents_hash = pk_pass.contents_hash()
+        last_update, created = models.AppleWalletPass.objects.get_or_create(
+            order_position=position,
+            defaults={
+                "pass_type_id": self.signer.pass_type_id,
+                "pass_serial": pass_serial,
+                "last_modified": timezone.now(),
+                "contents_hash": contents_hash,
+            }
+        )
+        if not created and last_update.contents_hash != contents_hash:
+            last_update.contents_hash = contents_hash
+            last_update.last_modified = timezone.now()
+            last_update.save()
+
         pk_pass.sign(self.signer)
         return pk_pass
 
     def generate(self, position: OrderPosition) -> typing.Tuple[str, str, bytes]:
-        pk_pass = self._generate_pass(position)
+        pk_pass = self.generate_pass(position)
         return f"pass_{self.event.slug}_{position.order.code}.pkpass", "application/vnd.apple.pkpass", pk_pass.get_buffer()
 
     def generate_order(self, order: Order) -> typing.Tuple[str, str, bytes]:

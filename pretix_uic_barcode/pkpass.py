@@ -38,6 +38,8 @@ WWDR_G4_NAME = cryptography.x509.Name.from_rfc4514_string(
     "C=US,O=Apple Inc.,OU=G4,CN=Apple Worldwide Developer Relations Certification Authority")
 
 
+SESSION = niquests.Session(happy_eyeballs=True, timeout=5)
+
 class PKPassSigner:
     team_id: str
     pass_type_id: str
@@ -126,6 +128,10 @@ class PKPass:
         self.data[filename] = data
         self.manifest[filename] = file_hash
 
+    def contents_hash(self):
+        contents = ":".join([v for _, v in sorted(self.manifest.items(), key=lambda x: x[0])])
+        return hashlib.sha256(contents.encode()).digest()
+
     def sign(self, signer: PKPassSigner):
         manifest = json.dumps(self.manifest).encode("utf-8")
         self.data["manifest.json"] = manifest
@@ -189,7 +195,7 @@ class PKPass:
             "cert_req": True,
             "nonce": timestamp_nonce,
         })
-        r = niquests.post(TSP_URL, headers={
+        r = SESSION.post(TSP_URL, headers={
             "Content-Type": "application/timestamp-query",
             "User-Agent": f"Pretix-UIC-Barcode/{__version__}",
         }, data=timestamp_req.dump())
