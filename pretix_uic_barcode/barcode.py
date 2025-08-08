@@ -212,6 +212,8 @@ class UICBarcodeGenerator:
                 kwargs["order"] = order_position.order
             if "organizer" in params:
                 kwargs["organizer"] = order_position.organizer
+            if "has_totp" in params:
+                kwargs["has_totp"] = totp
             if elm := generator.generate_element(**kwargs):
                 barcode_elements.append(elm)
 

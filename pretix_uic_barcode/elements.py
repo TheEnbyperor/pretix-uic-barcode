@@ -55,6 +55,7 @@ class PretixDataBarcodeElementGenerator(BaseBarcodeElementGenerator):
             order_position: OrderPosition,
             variation: ItemVariation = None, subevent: SubEvent = None,
             attendee_name: str = None, valid_from: datetime.datetime = None, valid_until: datetime.datetime = None,
+            has_totp: bool = False,
     ) -> PretixDataBarcodeElement:
         if valid_from:
             valid_from_utc = valid_from.timetuple()
@@ -76,6 +77,7 @@ class PretixDataBarcodeElementGenerator(BaseBarcodeElementGenerator):
             "orderYear": order_datetime[0],
             "orderDay": order_datetime[1],
             "orderTime": order_datetime[2],
+            "hasTotp": has_totp,
         }
         if variation:
             ticket_data["variationId"] = variation.pk

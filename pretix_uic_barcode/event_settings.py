@@ -62,5 +62,6 @@ def order_position_fields(order_position):
     if hasattr(order_position, "totp"):
         return {
             "uic_totp_key": base64.b16encode(order_position.totp.totp_key).decode("ascii"),
+            "uic_totp_period": order_position.event.settings.get("ticketoutput_google-wallet-uic_rotating_barcode_period", as_type=int),
         }
     return {}
