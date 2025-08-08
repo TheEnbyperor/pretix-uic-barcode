@@ -1,3 +1,5 @@
+import base64
+
 from rest_framework import serializers
 from cryptography.hazmat.primitives.serialization import load_pem_private_key, Encoding, PublicFormat
 
@@ -55,3 +57,10 @@ def event_settings_fields():
         "uic_security_provider": UICSecurityProviderField(read_only=True),
         "uic_key_id": UICKeyIDField(read_only=True),
     }
+
+def order_position_fields(order_position):
+    if hasattr(order_position, "totp"):
+        return {
+            "uic_totp_key": base64.b16encode(order_position.totp.totp_key).decode("ascii"),
+        }
+    return {}

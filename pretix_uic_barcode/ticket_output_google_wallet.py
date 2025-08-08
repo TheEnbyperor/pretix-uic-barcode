@@ -1,3 +1,4 @@
+import base64
 import inspect
 import json
 import typing
@@ -9,14 +10,15 @@ import decimal
 from django import forms
 from django.conf import settings
 from django.core.files.storage import default_storage
-from django.core.validators import RegexValidator
+from django.core.validators import RegexValidator, MinValueValidator
 from django.utils import translation
 from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
 from pretix.base.models import Order, OrderPosition, SubEvent
 from pretix.base.ticketoutput import BaseTicketOutput
 from pretix.multidomain.urlreverse import build_absolute_uri
-from . import gwallet, barcode
+from urllib.parse import urljoin
+from . import gwallet, barcode, models
 from .forms import PNGImageField
 
 
@@ -63,16 +65,22 @@ class GoogleWalletOutput(BaseTicketOutput):
                 required=False,
             )), ("bg_color", forms.CharField(
                 label=_("Background color"),
-                validators=[
-                    RegexValidator(regex="^#[0-9a-fA-F]{6}$", message=_(
-                        "Please enter the hexadecimal code of a color, e.g. #990000."
-                    )),
-                ],
+                validators=[RegexValidator(regex="^#[0-9a-fA-F]{6}$", message=_(
+                    "Please enter the hexadecimal code of a color, e.g. #990000."
+                ))],
                 required=False,
                 widget=forms.TextInput(attrs={
                     "class": "colorpickerfield no-contrast",
                     "placeholder": "#RRGGBB",
                 }),
+            )), ("rotating_barcodes", forms.BooleanField(
+                label=_("Rotating barcodes"),
+                required=False,
+            )), ("rotating_barcode_period", forms.IntegerField(
+                label=_("Rotating barcode period (ms)"),
+                required=False,
+                initial=5000,
+                validators=[MinValueValidator(1)],
             ))]
         )
 
@@ -131,19 +139,19 @@ class GoogleWalletOutput(BaseTicketOutput):
             }
         }
 
-        if logo_file := event.settings.get("logo", None):
+        if logo_file := self.settings.get("logo", as_type=str, default='')[7:]:
             data["logo"] = {
                 "sourceUri": {
-                    "uri": default_storage.url(logo_file.name)
+                    "uri": urljoin(build_absolute_uri(self.event, 'presale:event.index'), default_storage.url(logo_file))
                 }
             }
-        if hero_file := event.settings.get("hero", None):
+        if hero_file := self.settings.get("hero", as_type=str, default='')[7:]:
             data["heroImage"] = {
                 "sourceUri": {
-                    "uri": default_storage.url(hero_file.name)
+                    "uri": urljoin(build_absolute_uri(self.event, 'presale:event.index'), default_storage.url(hero_file))
                 }
             }
-        if bg_color := event.settings.get("bg_color", None):
+        if bg_color := self.settings.get("bg_color", None):
             data["hexBackgroundColor"] = bg_color
 
         if event.location:
@@ -243,20 +251,6 @@ class GoogleWalletOutput(BaseTicketOutput):
         if position.attendee_name:
             object_data["ticketHolderName"] = position.attendee_name
 
-        op_secret = self.barcode_generator.generate_barcode(position)
-        if self.event.settings.uic_barcode_encoding == "b45":
-            object_data["barcode"] = {
-                "type": "QR",
-                "value": op_secret.decode("utf-8"),
-                "alternateText": position.secret,
-            }
-        else:
-            object_data["barcode"] = {
-                "type": "AZTEC",
-                "value": op_secret.decode("iso-8859-1"),
-                "alternateText": position.secret,
-            }
-
         if event.geo_lat and event.geo_lon:
             object_data["locations"] = [{
                 "latitude": float(event.geo_lat),
@@ -279,6 +273,39 @@ class GoogleWalletOutput(BaseTicketOutput):
                     object_data["valueAddedModuleData"].append(module_data)
                 elif module_type == "message":
                     object_data["messages"].append(module_data)
+
+        if self.event.settings.uic_barcode_encoding == "b45":
+            op_secret = self.barcode_generator.generate_barcode(position)
+            object_data["barcode"] = {
+                "type": "QR",
+                "value": op_secret.decode("utf-8"),
+                "alternateText": position.secret,
+            }
+        else:
+            if self.settings.get("rotating_barcodes", False, as_type=bool):
+                op_secret_totp = self.barcode_generator.generate_barcode(position, totp=True)
+                period = self.settings.get("rotating_barcode_period", 5000, as_type=int)
+                totp_secret, _ = models.OrderPositionTotp.objects.get_or_create(order_position=position)
+                object_data["rotatingBarcode"] = {
+                    "type": "AZTEC",
+                    "valuePattern": op_secret_totp.decode("iso-8859-1"),
+                    "alternateText": position.secret,
+                    "totpDetails": {
+                        "periodMillis": period,
+                        "algorithm": "TOTP_SHA1",
+                        "parameters": {
+                            "key": base64.b16encode(totp_secret.totp_key).decode("ascii"),
+                            "valueLength": 8
+                        }
+                    }
+                }
+
+            op_secret = self.barcode_generator.generate_barcode(position)
+            object_data["barcode"] = {
+                "type": "AZTEC",
+                "value": op_secret.decode("iso-8859-1"),
+                "alternateText": position.secret,
+            }
 
         try:
             self.event_object.get(resourceId=object_id).execute()

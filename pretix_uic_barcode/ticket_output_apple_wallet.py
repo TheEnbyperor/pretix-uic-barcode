@@ -9,6 +9,7 @@ import pytz
 from django import forms
 from django.conf import settings
 from django.contrib.staticfiles import finders
+from django.core.files import File
 from django.core.files.storage import default_storage
 from django.core.validators import RegexValidator
 from django.utils import timezone
@@ -165,7 +166,7 @@ class AppleWalletOutput(BaseTicketOutput):
         pass_serial = f"{order.event.organizer.slug}-{position.code}"
         pass_json = {
             "formatVersion": 1,
-            "organizationName": self.signer.pass_signer_name,
+            "organizationName": str(event.organizer.name),
             "passTypeIdentifier": self.signer.pass_type_id,
             "teamIdentifier": self.signer.team_id,
             "serialNumber": pass_serial,
@@ -214,6 +215,7 @@ class AppleWalletOutput(BaseTicketOutput):
             date_to = event.date_to.astimezone(tz)
         else:
             date_to = None
+        date_admission = event.date_admission.astimezone(tz) if event.date_admission else None
 
         if position.item.admission:
             pass_json["eventTicket"]["auxiliaryFields"].append({
@@ -228,7 +230,7 @@ class AppleWalletOutput(BaseTicketOutput):
         if date_to:
             pass_json["expirationDate"] = date_to.isoformat()
             pass_json["relevantDates"].append({
-                "startDate": date_from.isoformat(),
+                "startDate": date_admission.isoformat() if date_admission else date_from.isoformat(),
                 "endDate": date_to.isoformat(),
             })
             if position.item.admission:
@@ -242,7 +244,17 @@ class AppleWalletOutput(BaseTicketOutput):
                 })
         else:
             pass_json["relevantDates"].append({
-                "date": date_from.isoformat(),
+                "date": date_admission.isoformat() if date_admission else date_from.isoformat(),
+            })
+
+        if position.item.admission and event.date_admission:
+            pass_json["eventTicket"]["headerFields"].append({
+                "key": "ev-admission",
+                "label": "Admission",
+                "dateStyle": "PKDateStyleMedium",
+                "timeStyle": "PKDateStyleShort",
+                "value": event.date_admission.astimezone(tz).isoformat(),
+                "ignoresTimeZone": True,
             })
 
         pass_json["eventTicket"]["primaryFields"].append({
@@ -258,14 +270,6 @@ class AppleWalletOutput(BaseTicketOutput):
             "key": "ev-product",
             "label": "Product",
             "value": product_name,
-        })
-
-        pass_json["eventTicket"]["headerFields"].append({
-            "key": "ev-date",
-            "value": event.date_from.astimezone(tz).isoformat(),
-            "dateStyle": "PKDateStyleShort",
-            "timeStyle": "PKDateStyleShort",
-            "ignoresTimeZone": True
         })
 
         if event.geo_lat and event.geo_lon:
@@ -310,41 +314,41 @@ class AppleWalletOutput(BaseTicketOutput):
         if label_color := self.settings.get("label_color", None):
             pass_json["labelColor"] = label_color
 
-        if icon_file := self.settings.get("icon", None):
+        if icon_file := self.settings.get("icon", None, as_type=File):
             pk_pass.add_file("icon.png", default_storage.open(icon_file.name, "rb").read())
-            if icon_2x_file := self.settings.get("icon_2x", None):
+            if icon_2x_file := self.settings.get("icon2x", None, as_type=File):
                 pk_pass.add_file("icon@2x.png", default_storage.open(icon_2x_file.name, "rb").read())
-            if icon_3x_file := self.settings.get("icon_3x", None):
+            if icon_3x_file := self.settings.get("icon3x", None, as_type=File):
                 pk_pass.add_file("icon@3x.png", default_storage.open(icon_3x_file.name, "rb").read())
         else:
             pk_pass.add_file("icon.png", open(finders.find("pretix_uic_barcode/icon.png"), "rb").read())
 
-        if logo_file := self.settings.get("logo", None):
+        if logo_file := self.settings.get("logo", None, as_type=File):
             pk_pass.add_file("logo.png", default_storage.open(logo_file.name, "rb").read())
-        if logo_2x_file := self.settings.get("logo_2x", None):
+        if logo_2x_file := self.settings.get("logo2x", None, as_type=File):
             pk_pass.add_file("logo@2x.png", default_storage.open(logo_2x_file.name, "rb").read())
-        if logo_3x_file := self.settings.get("logo_3x", None):
+        if logo_3x_file := self.settings.get("logo3x", None, as_type=File):
             pk_pass.add_file("logo@3x.png", default_storage.open(logo_3x_file.name, "rb").read())
 
-        if strip_file := self.settings.get("strip", None):
+        if strip_file := self.settings.get("strip", None, as_type=File):
             pk_pass.add_file("strip.png", default_storage.open(strip_file.name, "rb").read())
-        if strip_2x_file := self.settings.get("strip_2x", None):
+        if strip_2x_file := self.settings.get("strip2x", None, as_type=File):
             pk_pass.add_file("strip@2x.png", default_storage.open(strip_2x_file.name, "rb").read())
-        if strip_3x_file := self.settings.get("strip_3x", None):
+        if strip_3x_file := self.settings.get("strip3x", None, as_type=File):
             pk_pass.add_file("strip@3x.png", default_storage.open(strip_3x_file.name, "rb").read())
 
-        if thumbnail_file := self.settings.get("thumbnail", None):
+        if thumbnail_file := self.settings.get("thumbnail", None, as_type=File):
             pk_pass.add_file("thumbnail.png", default_storage.open(thumbnail_file.name, "rb").read())
-        if thumbnail_2x_file := self.settings.get("thumbnail_2x", None):
+        if thumbnail_2x_file := self.settings.get("thumbnail2x", None, as_type=File):
             pk_pass.add_file("thumbnail@2x.png", default_storage.open(thumbnail_2x_file.name, "rb").read())
-        if thumbnail_3x_file := self.settings.get("thumbnail_3x", None):
+        if thumbnail_3x_file := self.settings.get("thumbnail3x", None, as_type=File):
             pk_pass.add_file("thumbnail@3x.png", default_storage.open(thumbnail_3x_file.name, "rb").read())
 
-        if background_file := self.settings.get("background", None):
+        if background_file := self.settings.get("background", None, as_type=File):
             pk_pass.add_file("background.png", default_storage.open(background_file.name, "rb").read())
-        if background_2x_file := self.settings.get("background_2x", None):
+        if background_2x_file := self.settings.get("background2x", None, as_type=File):
             pk_pass.add_file("background@2x.png", default_storage.open(background_2x_file.name, "rb").read())
-        if background_3x_file := self.settings.get("background_3x", None):
+        if background_3x_file := self.settings.get("background3x", None, as_type=File):
             pk_pass.add_file("background@3x.png", default_storage.open(background_3x_file.name, "rb").read())
 
         for g in self.module_generators:

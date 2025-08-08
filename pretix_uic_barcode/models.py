@@ -1,6 +1,9 @@
+import secrets
 from django.db import models
 from pretix.base.models import OrderPosition
 
+def generate_totp_secret():
+    return secrets.token_bytes(20)
 
 class AppleWalletPass(models.Model):
     order_position = models.OneToOneField(OrderPosition, on_delete=models.CASCADE, related_name="apple_wallet_pass", db_index=True)
@@ -28,3 +31,8 @@ class ApplePassRegistration(models.Model):
 
     class Meta:
         unique_together = (("order_position", "device"),)
+
+
+class OrderPositionTotp(models.Model):
+    order_position = models.OneToOneField(OrderPosition, on_delete=models.CASCADE, related_name="totp", db_index=True)
+    totp_key = models.BinaryField(default=generate_totp_secret)

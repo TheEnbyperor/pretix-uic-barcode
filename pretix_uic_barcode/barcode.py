@@ -18,6 +18,7 @@ from . import elements
 
 ROOT = pathlib.Path(__file__).parent
 BARCODE_HEADER = asn1tools.compile_files([ROOT / "asn1" / "uicBarcodeHeader_v2.0.1.asn"], codec="uper")
+BARCODE_TOTP = asn1tools.compile_files([ROOT / "asn1" / "uicTotp.asn"], codec="uper")
 
 
 class UICBarcodeGenerator:
@@ -41,7 +42,7 @@ class UICBarcodeGenerator:
                 renderers.append(pp)
         return renderers
 
-    def sign(self, barcode_elements: typing.List[elements.UICBarcodeElement]):
+    def sign(self, barcode_elements: typing.List[elements.UICBarcodeElement], totp: bool = False):
         priv_key = self._get_priv_key()
         if self.event.settings.uic_barcode_format == "dosipas":
             if isinstance(priv_key, DSAPrivateKey):
@@ -98,7 +99,6 @@ class UICBarcodeGenerator:
                         "data": elm.record_content()
                     })
 
-            priv_key = self._get_priv_key()
             tbs_bytes = BARCODE_HEADER.encode("Level1DataType", barcode_data["level2SignedData"]["level1Data"])
 
             if isinstance(priv_key, DSAPrivateKey):
@@ -108,7 +108,25 @@ class UICBarcodeGenerator:
             elif isinstance(priv_key, Ed25519PrivateKey):
                 barcode_data["level2SignedData"]["level1Signature"] = priv_key.sign(tbs_bytes)
 
-            barcode_bytes = BARCODE_HEADER.encode("UicBarcodeHeader", barcode_data)
+            if totp:
+                totp_offset = 0
+                while True:
+                    totp_data = {
+                        "padding": (b"\x00", totp_offset),
+                        "totp": "XXXXXXXX",
+                    }
+                    barcode_data["level2SignedData"]["level2Data"] = {
+                        "dataFormat": "_5101TOTP",
+                        "data": BARCODE_TOTP.encode("PretixTotp", totp_data),
+                    }
+                    barcode_bytes = BARCODE_HEADER.encode("UicBarcodeHeader", barcode_data)
+                    if barcode_bytes.endswith(b"XXXXXXXX\x00"):
+                        barcode_bytes = barcode_bytes[:-9] + b"{totp_value_0}\x00"
+                        break
+                    else:
+                        totp_offset += 1
+            else:
+                barcode_bytes = BARCODE_HEADER.encode("UicBarcodeHeader", barcode_data)
 
         elif self.event.settings.uic_barcode_format == "tlb":
             assert isinstance(priv_key, DSAPrivateKey)
@@ -168,7 +186,7 @@ class UICBarcodeGenerator:
             raise NotImplementedError()
 
     def generate_barcode(
-            self, order_position: OrderPosition = None
+            self, order_position: OrderPosition = None, totp: bool = False
     ) -> bytes:
         barcode_elements = []
         for generator in self.barcode_element_generators:
@@ -197,4 +215,4 @@ class UICBarcodeGenerator:
             if elm := generator.generate_element(**kwargs):
                 barcode_elements.append(elm)
 
-        return self.sign(barcode_elements)
+        return self.sign(barcode_elements, totp)

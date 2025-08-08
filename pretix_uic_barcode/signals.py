@@ -7,6 +7,7 @@ from django import forms
 from pretix.base.signals import EventPluginSignal, register_ticket_secret_generators, register_ticket_outputs, api_event_settings_fields, \
     register_global_settings, order_approved, order_denied, order_expired, order_modified, order_changed, order_paid
 from pretix.control.signals import nav_event_settings
+from pretix.api.signals import orderposition_api_details
 from . import secrets, elements, event_settings, ticket_output, ticket_output_pdf, ticket_output_apple_wallet, ticket_output_google_wallet
 from .forms import AppleWalletCertificateFileField
 
@@ -23,6 +24,12 @@ def secret_generator(sender, **kwargs):
 @receiver(api_event_settings_fields, dispatch_uid="api_event_settings_uic_barcode")
 def api_settings(sender, **kwargs):
     return event_settings.event_settings_fields()
+
+
+
+@receiver(orderposition_api_details, dispatch_uid="api_order_position_uic_barcode")
+def api_order_position(sender, orderposition, **kwargs):
+    return event_settings.order_position_fields(orderposition)
 
 
 @receiver(nav_event_settings, dispatch_uid="nav_settings_uic_barcode")
@@ -83,30 +90,30 @@ def register_global_settings(sender, **kwargs):
 
 
 @receiver(order_paid, dispatch_uid="uic_barcode_order_paid")
-def order_paid(sender, instance, **kwargs):
-    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": instance.pk})
+def order_paid(sender, order, **kwargs):
+    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": order.pk})
 
 
 @receiver(order_approved, dispatch_uid="uic_barcode_order_approved")
-def order_approved(sender, instance, **kwargs):
-    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": instance.pk})
+def order_approved(sender, order, **kwargs):
+    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": order.pk})
 
 
 @receiver(order_denied, dispatch_uid="uic_barcode_order_denied")
-def order_denied(sender, instance, **kwargs):
-    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": instance.pk})
+def order_denied(sender, order, **kwargs):
+    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": order.pk})
 
 
 @receiver(order_expired, dispatch_uid="uic_barcode_order_expired")
-def order_expired(sender, instance, **kwargs):
-    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": instance.pk})
+def order_expired(sender, order, **kwargs):
+    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": order.pk})
 
 
 @receiver(order_modified, dispatch_uid="uic_barcode_order_modified")
-def order_modified(sender, instance, **kwargs):
-    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": instance.pk})
+def order_modified(sender, order, **kwargs):
+    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": order.pk})
 
 
 @receiver(order_changed, dispatch_uid="uic_barcode_order_changed")
-def order_changed(sender, instance, **kwargs):
-    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": instance.pk})
+def order_changed(sender, order, **kwargs):
+    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": order.pk})
