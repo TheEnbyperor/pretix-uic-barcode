@@ -28,6 +28,7 @@ class GoogleWalletOutput(BaseTicketOutput):
     download_button_icon = "fa-mobile"
     download_button_text = _("Google Wallet")
     multi_download_enabled = True
+    preview_allowed = False
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

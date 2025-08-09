@@ -25,7 +25,10 @@ def notify_apple_device(device: models.AppleDevice):
         return
     r.raise_for_status()
 
-def notify_apple(position: OrderPosition):
+
+@app.task(acks_late=True)
+def notify_apple(position_pk):
+    position = OrderPosition.objects.get(pk=position_pk)
     for registration in position.apple_registrations.all():
         notify_apple_device(registration.device)
 
@@ -38,7 +41,7 @@ def update_ticket_output(position_pk):
 
     google_wallet.generate_pass(position, force=False)
     apple_wallet.generate_pass(position)
-    notify_apple(position)
+    notify_apple.apply_async(kwargs={"position_pk": position.pk}, countdown=5)
 
 
 @app.task(acks_late=True)

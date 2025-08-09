@@ -1,3 +1,5 @@
+from django.conf import settings
+from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy
 from . import __version__
 
@@ -14,8 +16,8 @@ class PluginApp(PluginConfig):
 
     class PretixPluginMeta:
         name = gettext_lazy("UIC Barcodes")
-        author = "Q Misell"
-        description = gettext_lazy("Generate ticket barcodes as UIC barcodes")
+        author = "AS207960 Cyfyngedig"
+        description = gettext_lazy("Generate ticket barcodes as UIC barcodes.")
         visible = True
         experimental = True
         version = __version__
@@ -26,3 +28,10 @@ class PluginApp(PluginConfig):
 
     def ready(self):
         from . import signals  # NOQA
+
+    @cached_property
+    def compatibility_warnings(self):
+        errs = []
+        if not settings.HAS_CELERY:
+            errs.append("This plugin heavily relies on background tasks and works better with Celery installed.")
+        return errs
