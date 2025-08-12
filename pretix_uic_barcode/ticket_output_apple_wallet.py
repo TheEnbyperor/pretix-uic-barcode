@@ -18,7 +18,7 @@ from django.utils.translation import gettext_lazy as _
 from pretix.base.models import Order, OrderPosition
 from pretix.base.ticketoutput import BaseTicketOutput
 from pretix.multidomain.urlreverse import build_absolute_uri
-from . import pkpass, barcode, models
+from . import pkpass, barcode, models, vas
 from .forms import PNGImageField
 
 
@@ -40,6 +40,7 @@ class AppleWalletOutput(BaseTicketOutput):
         super().__init__(*args, **kwargs)
         self.signer = pkpass.get_signer()
         self.barcode_generator = barcode.UICBarcodeGenerator(self.event)
+        self.vas_generator = vas.VASDataGenerator(self.event)
 
     @cached_property
     def module_generators(self) -> list:

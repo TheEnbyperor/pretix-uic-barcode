@@ -12,6 +12,7 @@ from . import secrets, elements, event_settings, ticket_output, ticket_output_pd
 from .forms import AppleWalletCertificateFileField
 
 register_barcode_element_generators = EventPluginSignal()
+register_vas_element_generators = EventPluginSignal()
 generate_google_wallet_module = EventPluginSignal()
 generate_apple_wallet_module = EventPluginSignal()
 
@@ -52,7 +53,12 @@ def navbar_settings(sender, request, **kwargs):
 
 
 @receiver(register_barcode_element_generators, dispatch_uid="barcode_element_generator_pretix_data")
-def element_generator(sender, **kwargs):
+def uic_element_generator(sender, **kwargs):
+    return [elements.PretixDataBarcodeElementGenerator]
+
+
+@receiver(register_vas_element_generators, dispatch_uid="vas_element_generator_pretix_data")
+def vas_element_generator(sender, **kwargs):
     return [elements.PretixDataBarcodeElementGenerator]
 
 

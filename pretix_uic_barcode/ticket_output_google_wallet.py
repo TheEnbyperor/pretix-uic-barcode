@@ -18,7 +18,7 @@ from pretix.base.models import Order, OrderPosition, SubEvent
 from pretix.base.ticketoutput import BaseTicketOutput
 from pretix.multidomain.urlreverse import build_absolute_uri
 from urllib.parse import urljoin
-from . import gwallet, barcode, models
+from . import gwallet, barcode, models, vas
 from .forms import PNGImageField
 
 
@@ -37,6 +37,7 @@ class GoogleWalletOutput(BaseTicketOutput):
         self.event_class = self.client.eventticketclass() if self.client else None
         self.event_object = self.client.eventticketobject() if self.client else None
         self.barcode_generator = barcode.UICBarcodeGenerator(self.event)
+        self.vas_generator = vas.VASDataGenerator(self.event)
 
     @cached_property
     def module_generators(self) -> list:
@@ -208,7 +209,7 @@ class GoogleWalletOutput(BaseTicketOutput):
             "id": object_id,
             "classId": class_id,
             "ticketNumber": position.code,
-            "smartTapRedemptionValue": position.secret,
+            "smartTapRedemptionValue": self.vas_generator.generate_vas_data(position),
             "reservationInfo": {
                 "confirmationCode": order.code
             },

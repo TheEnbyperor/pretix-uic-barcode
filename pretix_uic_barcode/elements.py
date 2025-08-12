@@ -27,6 +27,16 @@ class UICBarcodeElement(abc.ABC):
         raise NotImplementedError()
 
 
+class VASElement(abc.ABC):
+    @abc.abstractmethod
+    def record_id(self) -> typing.Optional[str]:
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def record_content(self) -> bytes:
+        raise NotImplementedError()
+
+
 class PretixDataBarcodeElement(UICBarcodeElement):
     def __init__(self, data: typing.Dict):
         self.data = data
@@ -41,15 +51,41 @@ class PretixDataBarcodeElement(UICBarcodeElement):
         return BARCODE_CONTENT.encode("PretixTicket", self.data)
 
 
-class BaseBarcodeElementGenerator:
+class PretixDataVASElement(VASElement):
+    def __init__(self, data: typing.Dict):
+        self.data = data
+
+    def record_id(self):
+        return "P"
+
+    def record_content(self) -> bytes:
+        return BARCODE_CONTENT.encode("VASPretixTicket", self.data)
+
+
+class BaseBarcodeElementGenerator(abc.ABC):
     def __init__(self, event):
         self.event = event
 
+    @abc.abstractmethod
     def generate_element(self, **kwargs) -> typing.Optional[UICBarcodeElement]:
         raise NotImplementedError()
 
 
-class PretixDataBarcodeElementGenerator(BaseBarcodeElementGenerator):
+class BaseVASElementGenerator(abc.ABC):
+    def __init__(self, event):
+        self.event = event
+
+    @abc.abstractmethod
+    def generate_vas_element(self, **kwargs) -> typing.Optional[VASElement]:
+        raise NotImplementedError()
+
+
+class PretixDataBarcodeElementGenerator(BaseBarcodeElementGenerator, BaseVASElementGenerator):
+    @staticmethod
+    def map_timestamp(timestamp):
+        timestamp_utc = timestamp.timetuple()
+        return timestamp_utc.tm_year, timestamp_utc.tm_yday, (60 * timestamp_utc.tm_hour) + timestamp_utc.tm_min
+
     def generate_element(
             self, item: Item, order_datetime: datetime.datetime,
             order_position: OrderPosition,
@@ -57,18 +93,9 @@ class PretixDataBarcodeElementGenerator(BaseBarcodeElementGenerator):
             attendee_name: str = None, valid_from: datetime.datetime = None, valid_until: datetime.datetime = None,
             has_totp: bool = False,
     ) -> PretixDataBarcodeElement:
-        if valid_from:
-            valid_from_utc = valid_from.timetuple()
-            valid_from = (valid_from_utc.tm_year, valid_from_utc.tm_yday,
-                          (60 * valid_from_utc.tm_hour) + valid_from_utc.tm_min)
-        if valid_until:
-            valid_until_utc = valid_until.timetuple()
-            valid_until = (valid_until_utc.tm_year, valid_until_utc.tm_yday,
-                           (60 * valid_until_utc.tm_hour) + valid_until_utc.tm_min)
-
-        order_datetime_utc = order_datetime.timetuple()
-        order_datetime = (order_datetime_utc.tm_year, order_datetime_utc.tm_yday,
-                       (60 * order_datetime_utc.tm_hour) + order_datetime_utc.tm_min)
+        valid_from = self.map_timestamp(valid_from) if valid_from else None
+        valid_until = self.map_timestamp(valid_until) if valid_until else None
+        order_datetime = self.map_timestamp(order_datetime)
 
         ticket_data = {
             "uniqueId": order_position.secret,
@@ -95,3 +122,31 @@ class PretixDataBarcodeElementGenerator(BaseBarcodeElementGenerator):
             ticket_data["validUntilTime"] = valid_until[2]
 
         return PretixDataBarcodeElement(ticket_data)
+
+    def generate_vas_element(
+            self, item: Item, order_position: OrderPosition,
+            variation: ItemVariation = None, subevent: SubEvent = None,
+            valid_from: datetime.datetime = None, valid_until: datetime.datetime = None,
+    ) -> PretixDataVASElement:
+        valid_from = self.map_timestamp(valid_from) if valid_from else None
+        valid_until = self.map_timestamp(valid_until) if valid_until else None
+
+        ticket_data = {
+            "uniqueId": order_position.secret,
+            "eventSlug": self.event.slug,
+            "itemId": item.pk,
+        }
+        if variation:
+            ticket_data["variationId"] = variation.pk
+        if subevent:
+            ticket_data["subeventId"] = subevent.pk
+        if valid_from:
+            ticket_data["validFromYear"] = valid_from[0]
+            ticket_data["validFromDay"] = valid_from[1]
+            ticket_data["validFromTime"] = valid_from[2]
+        if valid_until:
+            ticket_data["validUntilYear"] = valid_until[0]
+            ticket_data["validUntilDay"] = valid_until[1]
+            ticket_data["validUntilTime"] = valid_until[2]
+
+        return PretixDataVASElement(ticket_data)
