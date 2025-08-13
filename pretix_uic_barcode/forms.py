@@ -1,4 +1,5 @@
 import tempfile
+import typing
 import cryptography.x509
 import cryptography.hazmat.primitives.serialization
 from django import forms
@@ -42,6 +43,10 @@ class AppleWalletCertificateFileField(forms.FileField):
 class PNGImageField(forms.FileField):
     widget = ClearableBasenameFileInput
 
+    def __init__(self, *args, image_name: typing.Optional[str] = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.image_name = image_name
+
     def clean(self, value, *args, **kwargs):
         value = super().clean(value, *args, **kwargs)
         if isinstance(value, UploadedFile):
@@ -60,7 +65,7 @@ class PNGImageField(forms.FileField):
                     im.save(tmpfile.name)
                     tmpfile.seek(0)
                     return SimpleUploadedFile(
-                        "picture.png", tmpfile.read(), "image png"
+                        self.image_name or "picture", tmpfile.read(), "image/png"
                     )
             except IOError:
                 raise ValidationError(

@@ -1,19 +1,30 @@
-import pretix.base.models
+import abc
+import base64
+import json
+import niquests
 import logging
 import datetime
-
+import dataclasses
 import pytz
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_private_key
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.types import PublicKeyTypes
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_private_key, load_der_public_key
 from django.contrib.auth.models import AnonymousUser
 from django.http import HttpResponse
 from django.utils import timezone
+from django.utils.functional import cached_property
 from django.utils.http import http_date, parse_http_date_safe
-from pretix.base.models import Organizer, Order, OrderPosition
+from django_scopes import scope
+from pretix.base.models import Organizer, Order, OrderPosition, Event
 from rest_framework import viewsets, serializers, status
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from drf_base64_binaryfield.fields import Base64BinaryField
 from . import pkpass, ticket_output_apple_wallet, models
 
 
@@ -30,7 +41,7 @@ class KeysSerializer(serializers.Serializer):
 class UICKeyViewSet(viewsets.ViewSet):
     @staticmethod
     def list(request, organizer):
-        organizer = pretix.base.models.Organizer.objects.get(slug=organizer)
+        organizer = Organizer.objects.get(slug=organizer)
 
         seen_keys = set()
         keys = []
@@ -222,3 +233,162 @@ class AppleRegisterPass(AuthenticatedAppleView):
         device, _ = models.AppleDevice.objects.get_or_create(device_id=device_id)
         device.registrations.filter(order_position=request.auth).delete()
         return Response(status=status.HTTP_200_OK)
+
+
+class GooglePaySigningKey(serializers.Serializer):
+    signedKey = serializers.CharField()
+    signatures = serializers.ListField(child=Base64BinaryField())
+
+class GooglePayTokenSerializer(serializers.Serializer):
+    protocolVersion = serializers.CharField()
+    signature = Base64BinaryField()
+    intermediateSigningKey = GooglePaySigningKey()
+    signedMessage = serializers.CharField()
+
+@dataclasses.dataclass
+class GooglePayRootKey:
+    public_key: PublicKeyTypes
+    protocol_version: str
+    expiration: datetime.datetime
+
+class GooglePayRootStore:
+    ROOT_KEYS_URL = "https://pay.google.com/gp/m/issuer/keys"
+
+    @cached_property
+    def root_keys(self):
+        r = niquests.get(self.ROOT_KEYS_URL)
+        r.raise_for_status()
+        keys = r.json()["keys"]
+        return [GooglePayRootKey(
+            public_key=load_der_public_key(base64.b64decode(key["keyValue"])),
+            protocol_version=key["protocolVersion"],
+            expiration=datetime.datetime.fromtimestamp(int(key["keyExpiration"]) / 1000, pytz.utc),
+        ) for key in keys]
+
+
+class GooglePayCallback(abc.ABC):
+    SENDER_ID = "GooglePayPasses"
+    SIGNING_PROTOCOL = "ECv2SigningOnly"
+    ROOT_STORE = GooglePayRootStore()
+
+    @abc.abstractmethod
+    def process_callback(self, message):
+        raise NotImplementedError()
+
+    def post(self, request, organizer, event):
+        organizer = get_object_or_404(Organizer, slug=organizer)
+        with scope(organizer=organizer):
+            event = get_object_or_404(Event, slug=event)
+        issuer_id = event.settings.get("ticketoutput_google-wallet-uic_issuer_id")
+
+        token = GooglePayTokenSerializer(data=request.data)
+        if not token.is_valid():
+            return Response(token.errors, status=status.HTTP_400_BAD_REQUEST)
+        token = token.validated_data
+
+        if token["protocolVersion"] != self.SIGNING_PROTOCOL:
+            return Response({
+                "protocolVersion": "Invalid protocol version",
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        now = datetime.datetime.now(pytz.utc)
+        root_keys = list(filter(lambda k: k.protocol_version == token["protocolVersion"] and k.expiration >= now,
+                                self.ROOT_STORE.root_keys))
+
+        sender_id = self.SENDER_ID.encode("utf-8")
+        protocol_version = token["protocolVersion"].encode("utf-8")
+        signed_key = token["intermediateSigningKey"]["signedKey"].encode("utf-8")
+        intermediate_signing_key_tbs = bytes([
+            *len(sender_id).to_bytes(4, byteorder="little"),
+            *sender_id,
+            *len(protocol_version).to_bytes(4, byteorder="little"),
+            *protocol_version,
+            *len(signed_key).to_bytes(4, byteorder="little"),
+            *signed_key,
+        ])
+
+        key_verified = False
+        for signature in token["intermediateSigningKey"]["signatures"]:
+            for root_key in root_keys:
+                try:
+                    root_key.public_key.verify(signature, intermediate_signing_key_tbs, ec.ECDSA(hashes.SHA256()))
+                    key_verified = True
+                except InvalidSignature:
+                    pass
+
+        if not key_verified:
+            return Response({
+                "intermediateSigningKey": "Invalid signature",
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        intermediate_signing_key_data = json.loads(token["intermediateSigningKey"]["signedKey"])
+        intermediate_signing_key_expiration = datetime.datetime.fromtimestamp(
+            int(intermediate_signing_key_data["keyExpiration"]) / 1000, pytz.utc)
+        if intermediate_signing_key_expiration < now:
+            return Response({
+                "intermediateSigningKey": "Expired key",
+            }, status=status.HTTP_400_BAD_REQUEST)
+        intermediate_signing_key = load_der_public_key(base64.b64decode(intermediate_signing_key_data["keyValue"]))
+
+        signed_message = token["signedMessage"].encode("utf-8")
+        recipient_id = issuer_id.encode("utf-8")
+        signed_message_tbs = bytes([
+            *len(sender_id).to_bytes(4, byteorder="little"),
+            *sender_id,
+            *len(recipient_id).to_bytes(4, byteorder="little"),
+            *recipient_id,
+            *len(protocol_version).to_bytes(4, byteorder="little"),
+            *protocol_version,
+            *len(signed_message).to_bytes(4, byteorder="little"),
+            *signed_message,
+        ])
+
+        try:
+            intermediate_signing_key.verify(token["signature"], signed_message_tbs, ec.ECDSA(hashes.SHA256()))
+        except InvalidSignature:
+            return Response({
+                "signature": "Invalid signature",
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            message = json.loads(token["signedMessage"])
+        except ValueError:
+            return Response({
+                "signedMessage": "Invalid JSON",
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        return self.process_callback(message)
+
+class GoogleCallbackSerializer(serializers.Serializer):
+    classId = serializers.CharField()
+    objectId = serializers.CharField()
+    expTimeMillis = serializers.IntegerField()
+    eventType = serializers.CharField()
+    nonce = serializers.CharField()
+
+class GoogleCallback(GooglePayCallback, APIView):
+    authentication_classes = ()
+    permission_classes = ()
+
+    def process_callback(self, data):
+        data = GoogleCallbackSerializer(data=data)
+        if not data.is_valid():
+            return Response(data.errors, status=status.HTTP_400_BAD_REQUEST)
+        data = data.validated_data
+
+        expiration = datetime.datetime.fromtimestamp(int(data["expTimeMillis"]) / 1000, pytz.utc)
+        if expiration < datetime.datetime.now(pytz.utc):
+            return Response({
+                "expiration": "Expired message",
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        models.GoogleEventLog.objects.get_or_create(
+            class_id=data["classId"],
+            object_id=data["objectId"],
+            nonce=data["nonce"],
+            defaults={
+                "event_type": data["eventType"],
+            }
+        )
+
+        return Response(status=status.HTTP_202_ACCEPTED)

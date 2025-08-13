@@ -21,7 +21,8 @@ dependencies = [
     "niquests",
     "cryptography",
     "idna",
-    "google-api-python-client"
+    "google-api-python-client",
+    "drf-base64-binaryfield"
 ]
 
 [project.entry-points."pretix.plugin"]

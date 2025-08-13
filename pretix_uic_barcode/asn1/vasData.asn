@@ -6,7 +6,7 @@ ASN-Module-Header DEFINITIONS AUTOMATIC TAGS ::= BEGIN
 
 	DataType ::= SEQUENCE {
 		dataFormat	IA5String (SIZE (0..4) ^ FROM ("A".."Z"|"0".."9")),
-    	data		OCTET STRING (SIZE (0..64))
+		data		OCTET STRING (SIZE (0..64))
 	}
 
 END

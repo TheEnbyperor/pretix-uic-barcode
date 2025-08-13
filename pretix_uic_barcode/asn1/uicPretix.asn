@@ -28,9 +28,9 @@ ASN-Module-Pretix DEFINITIONS AUTOMATIC TAGS ::= BEGIN
 	}
 
 	VASPretixTicket ::= SEQUENCE {
-   		uniqueId IA5String (SIZE (1..255)),
+		uniqueId IA5String (SIZE (1..255)),
 
-   		eventSlug IA5String (SIZE (1..50) ^ FROM ("a".."z"|"A".."Z"|"0".."9"|"."|"-")),
+		eventSlug IA5String (SIZE (1..50) ^ FROM ("a".."z"|"A".."Z"|"0".."9"|"."|"-")),
 		itemId INTEGER,
 		subeventId INTEGER OPTIONAL,
 		variationId INTEGER OPTIONAL,

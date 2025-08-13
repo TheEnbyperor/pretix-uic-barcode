@@ -3,8 +3,6 @@ import json
 import typing
 import collections
 import urllib.parse
-import urllib3
-import idna
 import pytz
 from django import forms
 from django.conf import settings
@@ -18,15 +16,8 @@ from django.utils.translation import gettext_lazy as _
 from pretix.base.models import Order, OrderPosition
 from pretix.base.ticketoutput import BaseTicketOutput
 from pretix.multidomain.urlreverse import build_absolute_uri
-from . import pkpass, barcode, models, vas
+from . import pkpass, barcode, models, vas, utils
 from .forms import PNGImageField
-
-
-def idna_encode_url(url: str):
-    parts = urllib3.util.parse_url(url)
-    host = idna.encode(parts.host).decode()
-    new_url = urllib3.util.Url(parts.scheme, parts.auth, host, parts.port, parts.path, parts.query, parts.fragment)
-    return new_url.url
 
 
 class AppleWalletOutput(BaseTicketOutput):
@@ -176,7 +167,7 @@ class AppleWalletOutput(BaseTicketOutput):
             "suppressStripShine": True,
             "suppressHeaderDarkening": True,
             "locations": [],
-            "webServiceURL": idna_encode_url(urllib.parse.urljoin(settings.SITE_URL, "/api/apple_wallet")),
+            "webServiceURL": utils.idna_encode_url(urllib.parse.urljoin(settings.SITE_URL, "/api/apple_wallet")),
             "authenticationToken": position.web_secret,
             "eventTicket": {
                 "headerFields": [],

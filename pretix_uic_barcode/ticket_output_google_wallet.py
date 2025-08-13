@@ -3,6 +3,8 @@ import inspect
 import json
 import typing
 import collections
+import urllib
+
 import google.auth.jwt
 import googleapiclient.errors
 import pytz
@@ -11,6 +13,7 @@ from django import forms
 from django.conf import settings
 from django.core.files.storage import default_storage
 from django.core.validators import RegexValidator, MinValueValidator
+from django.urls import reverse
 from django.utils import translation
 from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
@@ -18,7 +21,7 @@ from pretix.base.models import Order, OrderPosition, SubEvent
 from pretix.base.ticketoutput import BaseTicketOutput
 from pretix.multidomain.urlreverse import build_absolute_uri
 from urllib.parse import urljoin
-from . import gwallet, barcode, models, vas
+from . import gwallet, barcode, models, vas, utils
 from .forms import PNGImageField
 
 
@@ -62,9 +65,11 @@ class GoogleWalletOutput(BaseTicketOutput):
             )), ("logo", PNGImageField(
                 label=_("Event logo"),
                 required=False,
+                image_name="google_wallet_logo"
             )), ("hero", PNGImageField(
                 label=_("Hero image"),
                 required=False,
+                image_name="google_wallet_hero"
             )), ("bg_color", forms.CharField(
                 label=_("Background color"),
                 validators=[RegexValidator(regex="^#[0-9a-fA-F]{6}$", message=_(
@@ -78,6 +83,7 @@ class GoogleWalletOutput(BaseTicketOutput):
             )), ("rotating_barcodes", forms.BooleanField(
                 label=_("Rotating barcodes"),
                 required=False,
+                help_text=_("Rotating barcodes requires the use of the DOSIPAS barcode format."),
             )), ("rotating_barcode_period", forms.IntegerField(
                 label=_("Rotating barcode period (ms)"),
                 required=False,
@@ -128,8 +134,12 @@ class GoogleWalletOutput(BaseTicketOutput):
             "eventId": f"{tl_event.organizer.slug}_{tl_event.slug}",
             "issuerName": str(tl_event.organizer.name),
             "enableSmartTap": True,
+            "redemptionIssuers": [
+                str(issuer_id)
+            ],
             "homepageUri": {
-                "uri": uri
+                "uri": uri,
+                "localizedDescription": self._make_localised_string(event.name),
             },
             "securityAnimation": {
                 "animationType": "FOIL_SHIMMER"
@@ -138,6 +148,12 @@ class GoogleWalletOutput(BaseTicketOutput):
             "confirmationCodeLabel": "ORDER_NUMBER",
             "dateTime": {
                 "start": event.date_from.astimezone(tz).isoformat()
+            },
+            "callbackOptions": {
+                "url": utils.idna_encode_url(urllib.parse.urljoin(settings.SITE_URL, reverse("plugins:pretix_uic_barcode:google_wallet_callback", kwargs={
+                    "organizer": self.event.organizer.slug,
+                    "event": self.event.slug,
+                }))),
             }
         }
 

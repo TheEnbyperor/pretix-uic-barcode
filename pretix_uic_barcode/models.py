@@ -32,6 +32,19 @@ class ApplePassRegistration(models.Model):
     class Meta:
         unique_together = (("order_position", "device"),)
 
+class GoogleEventLog(models.Model):
+    class_id = models.CharField(max_length=255)
+    object_id = models.CharField(max_length=255)
+    nonce = models.CharField(max_length=255)
+    event_type = models.CharField(max_length=64, choices=(
+        ("save", "Add"),
+        ("del", "Delete"),
+    ))
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (("class_id", "object_id", "nonce"),)
+        ordering = ("-timestamp",)
 
 class OrderPositionTotp(models.Model):
     order_position = models.OneToOneField(OrderPosition, on_delete=models.CASCADE, related_name="totp", db_index=True)

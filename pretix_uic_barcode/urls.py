@@ -18,6 +18,8 @@ urlpatterns = [
     path("api/apple_wallet/v1/passes/<str:pass_type>/<str:pass_serial>", api.AppleFetchPass.as_view(), name="apple_wallet_fetch_pass"),
     path("api/apple_wallet/v1/devices/<str:device_id>/registrations/<str:pass_type>", api.ApplePassList.as_view(), name="apple_wallet_pass_list"),
     path("api/apple_wallet/v1/devices/<str:device_id>/registrations/<str:pass_type>/<str:pass_serial>", api.AppleRegisterPass.as_view(), name="apple_wallet_register_pass"),
+
+    path("api_google_wallet/v1/event/<str:organizer>/<str:event>/callback", api.GoogleCallback.as_view(), name="google_wallet_callback"),
 ]
 
 urls.orga_router.register('uic_keys', api.UICKeyViewSet, basename='uic_keys')
