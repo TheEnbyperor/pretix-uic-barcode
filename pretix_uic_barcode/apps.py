@@ -22,7 +22,7 @@ class PluginApp(PluginConfig):
         experimental = True
         version = __version__
         category = "FEATURE"
-        compatibility = "pretix>=2.7.0"
+        compatibility = "pretix>=2.7.1"
         settings_links = []
         navigation_links = []
 

@@ -65,11 +65,11 @@ class GoogleWalletOutput(BaseTicketOutput):
             )), ("logo", PNGImageField(
                 label=_("Event logo"),
                 required=False,
-                image_name="google_wallet_logo"
+                image_name="google_wallet_logo.png"
             )), ("hero", PNGImageField(
                 label=_("Hero image"),
                 required=False,
-                image_name="google_wallet_hero"
+                image_name="google_wallet_hero.png"
             )), ("bg_color", forms.CharField(
                 label=_("Background color"),
                 validators=[RegexValidator(regex="^#[0-9a-fA-F]{6}$", message=_(
@@ -118,6 +118,7 @@ class GoogleWalletOutput(BaseTicketOutput):
     def _generate_class(self, event):
         issuer_id = self.settings.get("issuer_id")
         tz = pytz.timezone(event.settings.timezone)
+        default_lang = translation.get_language() or settings.LANGUAGE_CODE
 
         if isinstance(event, SubEvent):
             class_id = f"{issuer_id}.pretix.ticket.{event.event.organizer.slug}.{event.event.slug}.{event.pk}"
@@ -173,7 +174,6 @@ class GoogleWalletOutput(BaseTicketOutput):
             data["hexBackgroundColor"] = bg_color
 
         if event.location:
-            default_lang = translation.get_language() or settings.LANGUAGE_CODE
             data["venue"] = {
                 "name": {
                     "translatedValues": [{
@@ -196,6 +196,11 @@ class GoogleWalletOutput(BaseTicketOutput):
                     }
                 }
             }
+        if event.geo_lat and event.geo_lon:
+            data["locations"] = [{
+                "latitude": float(event.geo_lat),
+                "longitude": float(event.geo_lon),
+            }]
         if event.date_to:
             data["dateTime"]["end"] = event.date_to.astimezone(tz).isoformat()
         if event.date_admission:
@@ -252,11 +257,11 @@ class GoogleWalletOutput(BaseTicketOutput):
             "ticketType": {
                 "translatedValues": [{
                     "language": "k",
-                    "value": f"{v} - {position.variation.name.localize(k)}",
+                    "value": f"{v} - {position.variation.description.localize(k)}",
                 } for k, v in position.item.name.data.items()],
                 "defaultValue": {
                     "language": default_lang,
-                    "value": f"{position.item.name.localize(default_lang)} - {position.variation.name.localize(default_lang)}"
+                    "value": f"{position.item.name.localize(default_lang)} - {position.variation.description.localize(default_lang)}"
                 }
             } if position.variation else self._make_localised_string(position.item.name),
             "faceValue": {
@@ -288,12 +293,6 @@ class GoogleWalletOutput(BaseTicketOutput):
 
         if position.attendee_name:
             object_data["ticketHolderName"] = position.attendee_name
-
-        if event.geo_lat and event.geo_lon:
-            object_data["locations"] = [{
-                "latitude": float(event.geo_lat),
-                "longitude": float(event.geo_lon),
-            }]
 
         for g in self.module_generators:
             kwargs = {}
