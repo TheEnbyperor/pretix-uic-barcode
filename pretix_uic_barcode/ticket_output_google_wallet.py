@@ -256,7 +256,7 @@ class GoogleWalletOutput(BaseTicketOutput):
             },
             "ticketType": {
                 "translatedValues": [{
-                    "language": "k",
+                    "language": k,
                     "value": f"{v} - {position.variation.description.localize(k)}",
                 } for k, v in position.item.name.data.items()],
                 "defaultValue": {
