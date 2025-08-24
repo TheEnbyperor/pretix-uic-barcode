@@ -27,7 +27,7 @@ from .forms import PNGImageField
 
 class GoogleWalletOutput(BaseTicketOutput):
     identifier = "google-wallet-uic"
-    verbose_name = "Google Wallet - UIC Barcode"
+    verbose_name = _("Google Wallet")
     download_button_icon = "fa-mobile"
     download_button_text = _("Google Wallet")
     multi_download_enabled = True
@@ -292,36 +292,43 @@ class GoogleWalletOutput(BaseTicketOutput):
                 elif module_type == "message":
                     object_data["messages"].append(module_data)
 
-        if self.event.settings.uic_barcode_encoding == "b45":
-            op_secret = self.barcode_generator.generate_barcode(position)
-            object_data["barcode"] = {
-                "type": "QR",
-                "value": op_secret.decode("utf-8"),
-                "alternateText": position.secret,
-            }
-        else:
-            if self.settings.get("rotating_barcodes", False, as_type=bool):
-                op_secret_totp = self.barcode_generator.generate_barcode(position, totp=True)
-                period = self.settings.get("rotating_barcode_period", 5000, as_type=int)
-                totp_secret, _ = models.OrderPositionTotp.objects.get_or_create(order_position=position)
-                object_data["rotatingBarcode"] = {
-                    "type": "AZTEC",
-                    "valuePattern": op_secret_totp.decode("iso-8859-1"),
+        if self.event.settings.ticket_secret_generator == "uic-barcodes":
+            if self.event.settings.uic_barcode_encoding == "b45":
+                op_secret = self.barcode_generator.generate_barcode(position)
+                object_data["barcode"] = {
+                    "type": "QR_CODE",
+                    "value": op_secret.decode("utf-8"),
                     "alternateText": position.secret,
-                    "totpDetails": {
-                        "periodMillis": period,
-                        "algorithm": "TOTP_SHA1",
-                        "parameters": {
-                            "key": base64.b16encode(totp_secret.totp_key).decode("ascii"),
-                            "valueLength": 8
+                }
+            else:
+                if self.settings.get("rotating_barcodes", False, as_type=bool):
+                    op_secret_totp = self.barcode_generator.generate_barcode(position, totp=True)
+                    period = self.settings.get("rotating_barcode_period", 5000, as_type=int)
+                    totp_secret, _ = models.OrderPositionTotp.objects.get_or_create(order_position=position)
+                    object_data["rotatingBarcode"] = {
+                        "type": "AZTEC",
+                        "valuePattern": op_secret_totp.decode("iso-8859-1"),
+                        "alternateText": position.secret,
+                        "totpDetails": {
+                            "periodMillis": period,
+                            "algorithm": "TOTP_SHA1",
+                            "parameters": {
+                                "key": base64.b16encode(totp_secret.totp_key).decode("ascii"),
+                                "valueLength": 8
+                            }
                         }
                     }
-                }
 
-            op_secret = self.barcode_generator.generate_barcode(position)
+                op_secret = self.barcode_generator.generate_barcode(position)
+                object_data["barcode"] = {
+                    "type": "AZTEC",
+                    "value": op_secret.decode("iso-8859-1"),
+                    "alternateText": position.secret,
+                }
+        else:
             object_data["barcode"] = {
-                "type": "AZTEC",
-                "value": op_secret.decode("iso-8859-1"),
+                "type": "QR_CODE",
+                "value": position.secret,
                 "alternateText": position.secret,
             }
 

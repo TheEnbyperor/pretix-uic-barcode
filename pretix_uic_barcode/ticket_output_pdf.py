@@ -95,8 +95,12 @@ class Renderer(BaseRenderer):
         content = o.get('content', 'secret')
 
         if content == 'secret':
-            content = self.barcode_generator.generate_barcode(op)
-            barcode_type = "qr" if self.event.settings.uic_barcode_encoding == "b45" else "aztec"
+            if self.event.settings.ticket_secret_generator == "uic-barcodes":
+                content = self.barcode_generator.generate_barcode(op)
+                barcode_type = "qr" if self.event.settings.uic_barcode_encoding == "b45" else "aztec"
+            else:
+                content = op.secret
+                barcode_type = "qr"
         else:
             content = self._get_text_content(op, order, o)
             barcode_type = "qr"
@@ -155,7 +159,7 @@ class Renderer(BaseRenderer):
 
 class PdfTicketOutput(SuperPdfTicketOutput):
     identifier = 'pdf-uic'
-    verbose_name = _('PDF output - UIC Barcode')
+    verbose_name = _('PDF output')
 
     def _draw_page(self, layout: TicketLayout, op: OrderPosition, order: Order):
         buffer = BytesIO()

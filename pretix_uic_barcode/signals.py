@@ -35,21 +35,24 @@ def api_order_position(sender, orderposition, **kwargs):
 
 @receiver(nav_event_settings, dispatch_uid="nav_settings_uic_barcode")
 def navbar_settings(sender, request, **kwargs):
-    url = resolve(request.path_info)
-    return [
-        {
-            "label": _("UIC Barcode"),
-            "url": reverse(
-                "plugins:pretix_uic_barcode:settings",
-                kwargs={
-                    "event": request.event.slug,
-                    "organizer": request.organizer.slug,
-                },
-            ),
-            "active": url.namespace == "plugins:pretix_uic_barcode"
-                      and url.url_name.startswith("settings"),
-        }
-    ]
+    if sender.settings.ticket_secret_generator == "uic-barcodes":
+        url = resolve(request.path_info)
+        return [
+            {
+                "label": _("UIC Barcode"),
+                "url": reverse(
+                    "plugins:pretix_uic_barcode:settings",
+                    kwargs={
+                        "event": request.event.slug,
+                        "organizer": request.organizer.slug,
+                    },
+                ),
+                "active": url.namespace == "plugins:pretix_uic_barcode"
+                          and url.url_name.startswith("settings"),
+            }
+        ]
+    else:
+        return []
 
 
 @receiver(register_barcode_element_generators, dispatch_uid="barcode_element_generator_pretix_data")

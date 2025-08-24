@@ -22,7 +22,7 @@ from .forms import PNGImageField
 
 class AppleWalletOutput(BaseTicketOutput):
     identifier = "apple-wallet-uic"
-    verbose_name = "Apple Wallet - UIC Barcode"
+    verbose_name = _("Apple Wallet")
     download_button_icon = "fa-mobile"
     download_button_text = _("Apple Wallet")
     multi_download_enabled = True
@@ -181,19 +181,27 @@ class AppleWalletOutput(BaseTicketOutput):
             "voided": order.status != Order.STATUS_PAID,
         }
 
-        op_secret = self.barcode_generator.generate_barcode(position)
-        if self.event.settings.uic_barcode_encoding == "b45":
-            pass_json["barcodes"].append({
-                "format": "PKBarcodeFormatQR",
-                "message": op_secret.decode("utf-8"),
-                "messageEncoding": "utf-8",
-                "altText": position.secret,
-            })
+        if self.event.settings.ticket_secret_generator == "uic-barcodes":
+            op_secret = self.barcode_generator.generate_barcode(position)
+            if self.event.settings.uic_barcode_encoding == "b45":
+                pass_json["barcodes"].append({
+                    "format": "PKBarcodeFormatQR",
+                    "message": op_secret.decode("utf-8"),
+                    "messageEncoding": "utf-8",
+                    "altText": position.secret,
+                })
+            else:
+                pass_json["barcodes"].append({
+                    "format": "PKBarcodeFormatAztec",
+                    "message": op_secret.decode("iso-8859-1"),
+                    "messageEncoding": "iso-8859-1",
+                    "altText": position.secret,
+                })
         else:
             pass_json["barcodes"].append({
-                "format": "PKBarcodeFormatAztec",
-                "message": op_secret.decode("iso-8859-1"),
-                "messageEncoding": "iso-8859-1",
+                "format": "PKBarcodeFormatQR",
+                "message": position.secret,
+                "messageEncoding": "utf-8",
                 "altText": position.secret,
             })
 

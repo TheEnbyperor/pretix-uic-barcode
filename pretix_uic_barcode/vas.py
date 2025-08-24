@@ -56,7 +56,6 @@ class VASDataGenerator:
             if elm := generator.generate_vas_element(**kwargs):
                 vas_elements.append(elm)
 
-        print(vas_elements)
         return base64.b85encode(VAS_HEADER.encode("VASData", {
             "data": [{
                 "dataFormat": elm.record_id(),
