@@ -103,17 +103,17 @@ class GoogleWalletOutput(BaseTicketOutput):
                     "value": val,
                 }
             }
-
-        return {
-            "translatedValues": [{
-                "language": k,
-                "value": str(v)
-            } for k, v in val.data.items()],
-            "defaultValue": {
-                "language": default_lang,
-                "value": val.localize(default_lang),
+        else:
+            return {
+                "translatedValues": [{
+                    "language": k,
+                    "value": str(v)
+                } for k, v in val.data.items()],
+                "defaultValue": {
+                    "language": default_lang,
+                    "value": val.localize(default_lang),
+                }
             }
-        }
 
     def _generate_class(self, event):
         issuer_id = self.settings.get("issuer_id")
@@ -173,8 +173,28 @@ class GoogleWalletOutput(BaseTicketOutput):
             data["hexBackgroundColor"] = bg_color
 
         if event.location:
+            default_lang = translation.get_language() or settings.LANGUAGE_CODE
             data["venue"] = {
-                "name": self._make_localised_string(event.location),
+                "name": {
+                    "translatedValues": [{
+                        "language": k,
+                        "value": str(v).split("\n")[0] or "N/A",
+                    } for k, v in event.location.data.items()],
+                    "defaultValue": {
+                        "language": default_lang,
+                        "value": event.location.localize(default_lang).split("\n")[0] or "N/A"
+                    }
+                },
+                "address": {
+                    "translatedValues": [{
+                        "language": k,
+                        "value": "\n".join(str(v).split("\n")[1:]) or "N/A"
+                    } for k, v in event.location.data.items()],
+                    "defaultValue": {
+                        "language": default_lang,
+                        "value": "\n".join(event.location.localize(default_lang).split("\n")[1:]) or "N/A",
+                    }
+                }
             }
         if event.date_to:
             data["dateTime"]["end"] = event.date_to.astimezone(tz).isoformat()
