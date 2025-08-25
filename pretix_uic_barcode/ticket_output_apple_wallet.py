@@ -54,62 +54,77 @@ class AppleWalletOutput(BaseTicketOutput):
                 label=_("Event icon @ 1x"),
                 help_text="29x29px PNG image",
                 required=False,
+                image_name="apple_wallet_icon.png"
             )), ("icon2x", PNGImageField(
                 label=_("Event icon @ 2x"),
                 help_text="58x58px PNG image",
                 required=False,
+                image_name="apple_wallet_icon@2x.png"
             )), ("icon3x", PNGImageField(
                 label=_("Event icon @ 3x"),
                 help_text="87x87px PNG image",
                 required=False,
+                image_name="apple_wallet_icon@3x.png"
             )), ("logo", PNGImageField(
                 label=_("Event logo @ 1x"),
                 help_text="160x50px PNG image. The allotted space is 160 x 50 points; in most cases it should be narrower.",
                 required=False,
+                image_name="apple_wallet_logo.png"
             )), ("logo2x", PNGImageField(
                 label=_("Event logo @ 2x"),
                 help_text="320x100px PNG image. The allotted space is 160 x 50 points; in most cases it should be narrower.",
                 required=False,
+                image_name="apple_wallet_logo@2x.png"
             )), ("logo3x", PNGImageField(
                 label=_("Event logo @ 3x"),
                 help_text="480x150px PNG image. The allotted space is 160 x 50 points; in most cases it should be narrower.",
                 required=False,
+                image_name="apple_wallet_icon@3x.png"
             )), ("strip", PNGImageField(
                 label=_("Strip image @ 1x"),
                 help_text="375x98px PNG image",
                 required=False,
+                image_name="apple_wallet_strip.png"
             )), ("strip2x", PNGImageField(
                 label=_("Strip image @ 2x"),
                 help_text="750x196px PNG image",
                 required=False,
+                image_name="apple_wallet_strip@2x.png"
             )), ("strip3x", PNGImageField(
                 label=_("Strip image @ 3x"),
                 help_text="1125x294px PNG image",
                 required=False,
+                image_name="apple_wallet_strip@3x.png"
             )), ("thumbnail", PNGImageField(
                 label=_("Thumbnail @ 1x"),
                 help_text="90x90px PNG image",
                 required=False,
+                image_name="apple_wallet_thumbnail.png"
             )), ("thumbnail2x", PNGImageField(
                 label=_("Thumbnail @ 2x"),
                 help_text="180x180px PNG image",
                 required=False,
+                image_name="apple_wallet_thumbnail@2x.png"
             )), ("thumbnail3x", PNGImageField(
                 label=_("Thumbnail @ 3x"),
                 help_text="270x270px PNG image",
                 required=False,
+                image_name="apple_wallet_thumbnail@3x.png"
             )), ("background", PNGImageField(
                 label=_("Background image @ 1x"),
                 help_text="180x220px PNG image",
                 required=False,
+                image_name="apple_wallet_background.png"
             )), ("background2x", PNGImageField(
                 label=_("Background image @ 2x"),
                 help_text="360x440px PNG image",
                 required=False,
+                image_name="apple_wallet_background@2x.png"
             )), ("background3x", PNGImageField(
                 label=_("Background image @ 3x"),
                 help_text="540x660px PNG image",
                 required=False,
+                image_name="apple_wallet_background@3x.png"
             )), ("bg_color", forms.CharField(
                 label=_("Background color"),
                 validators=[
