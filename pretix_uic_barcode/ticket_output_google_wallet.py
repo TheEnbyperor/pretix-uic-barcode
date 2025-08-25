@@ -17,6 +17,7 @@ from django.urls import reverse
 from django.utils import translation
 from django.utils.functional import cached_property
 from django.utils.translation import gettext_lazy as _
+from pretix.base.i18n import get_language_without_region
 from pretix.base.models import Order, OrderPosition, SubEvent
 from pretix.base.ticketoutput import BaseTicketOutput
 from pretix.multidomain.urlreverse import build_absolute_uri
@@ -93,32 +94,41 @@ class GoogleWalletOutput(BaseTicketOutput):
         )
 
     @staticmethod
-    def _make_localised_string(val):
-        default_lang = translation.get_language() or settings.LANGUAGE_CODE
+    def _public_language_code(lang: str) -> str:
+        return translation.get_language_info(lang).get('public_code', lang)
+
+    def _make_localised_string(self, val):
+        default_lang = get_language_without_region()
+
+        langs = {}
 
         if isinstance(val, str):
-            return {
-                "defaultValue": {
-                    "language": default_lang,
-                    "value": val,
-                }
-            }
+            langs[self._public_language_code(default_lang)] = val
+        elif isinstance(val, list):
+            for k, v in val:
+                langs[self._public_language_code(k)] = str(v)
         else:
-            return {
-                "translatedValues": [{
-                    "language": k,
-                    "value": str(v)
-                } for k, v in val.data.items()],
-                "defaultValue": {
-                    "language": default_lang,
-                    "value": val.localize(default_lang),
-                }
+            if default_lang not in langs:
+                langs[self._public_language_code(default_lang)] = val.localize(default_lang)
+            for k, v in val.data.items():
+                langs[self._public_language_code(k)] = str(v)
+
+        default_value = list(langs.items())[0]
+
+        return {
+            "translatedValues": [{
+                "language": k,
+                "value": v
+            } for k, v in langs.items()],
+            "defaultValue": {
+                "language": default_value[0],
+                "value": default_value[1],
             }
+        }
 
     def _generate_class(self, event):
         issuer_id = self.settings.get("issuer_id")
         tz = pytz.timezone(event.settings.timezone)
-        default_lang = translation.get_language() or settings.LANGUAGE_CODE
 
         if isinstance(event, SubEvent):
             class_id = f"{issuer_id}.pretix.ticket.{event.event.organizer.slug}.{event.event.slug}.{event.pk}"
@@ -175,26 +185,12 @@ class GoogleWalletOutput(BaseTicketOutput):
 
         if event.location:
             data["venue"] = {
-                "name": {
-                    "translatedValues": [{
-                        "language": k,
-                        "value": str(v).split("\n")[0] or "N/A",
-                    } for k, v in event.location.data.items()],
-                    "defaultValue": {
-                        "language": default_lang,
-                        "value": event.location.localize(default_lang).split("\n")[0] or "N/A"
-                    }
-                },
-                "address": {
-                    "translatedValues": [{
-                        "language": k,
-                        "value": "\n".join(str(v).split("\n")[1:]) or "N/A"
-                    } for k, v in event.location.data.items()],
-                    "defaultValue": {
-                        "language": default_lang,
-                        "value": "\n".join(event.location.localize(default_lang).split("\n")[1:]) or "N/A",
-                    }
-                }
+                "name": self._make_localised_string([
+                    (k, str(v).split("\n")[0].replace("\r", "") or "N/A") for k, v in event.location.data.items()
+                ]),
+                "address": self._make_localised_string([
+                    (k, "\n".join(str(v).split("\n")[1:]).replace("\r", "") or "N/A") for k, v in event.location.data.items()
+                ])
             }
         if event.geo_lat and event.geo_lon:
             data["locations"] = [{
@@ -229,7 +225,6 @@ class GoogleWalletOutput(BaseTicketOutput):
         order = position.order
         event = position.subevent or position.order.event
         tz = pytz.timezone(order.event.settings.timezone)
-        default_lang = translation.get_language() or settings.LANGUAGE_CODE
 
         class_id = self.get_or_update_class(event)
         issuer_id = self.settings.get("issuer_id")
@@ -254,16 +249,9 @@ class GoogleWalletOutput(BaseTicketOutput):
             "reservationInfo": {
                 "confirmationCode": order.code
             },
-            "ticketType": {
-                "translatedValues": [{
-                    "language": k,
-                    "value": f"{v} - {position.variation.description.localize(k)}",
-                } for k, v in position.item.name.data.items()],
-                "defaultValue": {
-                    "language": default_lang,
-                    "value": f"{position.item.name.localize(default_lang)} - {position.variation.description.localize(default_lang)}"
-                }
-            } if position.variation else self._make_localised_string(position.item.name),
+            "ticketType": self._make_localised_string([
+                (k, f"{v} - {position.variation.value.localize(k)}",)  for k, v in position.item.name.data.items()
+            ]) if position.variation else self._make_localised_string(position.item.name),
             "faceValue": {
                 "currencyCode": event.currency,
                 "micros": int(position.price * decimal.Decimal(1000000))
