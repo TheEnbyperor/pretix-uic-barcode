@@ -63,6 +63,7 @@ class GoogleWalletOutput(BaseTicketOutput):
             + [("issuer_id", forms.CharField(
                 label=_("Google Issuer ID"),
                 required=True,
+                help_text=f"The service account {self.client._http.credentials.service_account_email} must have access to this issuer."
             )), ("logo", PNGImageField(
                 label=_("Event logo"),
                 required=False,
