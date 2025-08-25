@@ -100,29 +100,29 @@ def register_global_settings(sender, **kwargs):
 
 @receiver(order_paid, dispatch_uid="uic_barcode_order_paid")
 def order_paid(sender, order, **kwargs):
-    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": order.pk})
+    ticket_output.update_ticket_output_all.apply_async(kwargs={"event": sender.pk, "order_pk": order.pk})
 
 
 @receiver(order_approved, dispatch_uid="uic_barcode_order_approved")
 def order_approved(sender, order, **kwargs):
-    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": order.pk})
+    ticket_output.update_ticket_output_all.apply_async(kwargs={"event": sender.pk, "order_pk": order.pk})
 
 
 @receiver(order_denied, dispatch_uid="uic_barcode_order_denied")
 def order_denied(sender, order, **kwargs):
-    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": order.pk})
+    ticket_output.update_ticket_output_all.apply_async(kwargs={"event": sender.pk, "order_pk": order.pk})
 
 
 @receiver(order_expired, dispatch_uid="uic_barcode_order_expired")
 def order_expired(sender, order, **kwargs):
-    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": order.pk})
+    ticket_output.update_ticket_output_all.apply_async(kwargs={"event": sender.pk, "order_pk": order.pk})
 
 
 @receiver(order_modified, dispatch_uid="uic_barcode_order_modified")
 def order_modified(sender, order, **kwargs):
-    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": order.pk})
+    ticket_output.update_ticket_output_all.apply_async(kwargs={"event": sender.pk, "order_pk": order.pk})
 
 
 @receiver(order_changed, dispatch_uid="uic_barcode_order_changed")
 def order_changed(sender, order, **kwargs):
-    ticket_output.update_ticket_output_all.apply_async(kwargs={"order_pk": order.pk})
+    ticket_output.update_ticket_output_all.apply_async(kwargs={"event": sender.pk, "order_pk": order.pk})
