@@ -28,7 +28,7 @@ def notify_apple_device(device: models.AppleDevice):
 
 
 @app.task(base=EventTask, acks_late=True)
-def notify_apple(position_pk):
+def notify_apple(event: Event, position_pk):
     position = OrderPosition.objects.get(pk=position_pk)
     for registration in position.apple_registrations.all():
         notify_apple_device(registration.device)
@@ -40,9 +40,11 @@ def update_ticket_output(event: Event, position_pk):
     google_wallet = ticket_output_google_wallet.GoogleWalletOutput(position.event)
     apple_wallet = ticket_output_apple_wallet.AppleWalletOutput(position.event)
 
-    google_wallet.generate_pass(position, force=False)
-    apple_wallet.generate_pass(position)
-    notify_apple.apply_async(kwargs={"event": event.pk, "position_pk": position.pk}, countdown=5)
+    if google_wallet.client:
+        google_wallet.generate_pass(position, force=False)
+    if apple_wallet.signer:
+        apple_wallet.generate_pass(position)
+        notify_apple.apply_async(kwargs={"event": event.pk, "position_pk": position.pk}, countdown=5)
 
 
 @app.task(base=EventTask, acks_late=True)
