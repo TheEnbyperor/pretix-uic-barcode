@@ -43,6 +43,12 @@ class GoogleWalletOutput(BaseTicketOutput):
         self.barcode_generator = barcode.UICBarcodeGenerator(self.event)
         self.vas_generator = vas.VASDataGenerator(self.event)
 
+    @property
+    def is_enabled(self):
+        if not self.client or not self.signer:
+            return False
+        return self.settings.get('_enabled', as_type=bool)
+
     @cached_property
     def module_generators(self) -> list:
         from .signals import generate_google_wallet_module
@@ -58,12 +64,13 @@ class GoogleWalletOutput(BaseTicketOutput):
 
     @property
     def settings_form_fields(self) -> dict:
+        sa_email = self.client._http.credentials.service_account_email if self.client else "N/A"
         return collections.OrderedDict(
             list(super().settings_form_fields.items())
             + [("issuer_id", forms.CharField(
                 label=_("Google Issuer ID"),
                 required=True,
-                help_text=f"The service account {self.client._http.credentials.service_account_email} must have access to this issuer."
+                help_text=f"The service account {sa_email} must have access to this issuer."
             )), ("logo", PNGImageField(
                 label=_("Event logo"),
                 required=False,
@@ -114,16 +121,16 @@ class GoogleWalletOutput(BaseTicketOutput):
             for k, v in val.data.items():
                 langs[self._public_language_code(k)] = str(v)
 
-        default_value = list(langs.items())[0]
+        values = list(langs.items())
 
         return {
             "translatedValues": [{
                 "language": k,
                 "value": v
-            } for k, v in langs.items()],
+            } for k, v in values[1:]],
             "defaultValue": {
-                "language": default_value[0],
-                "value": default_value[1],
+                "language": values[0][0],
+                "value": values[0][1],
             }
         }
 

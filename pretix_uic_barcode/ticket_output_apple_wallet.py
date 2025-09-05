@@ -33,6 +33,12 @@ class AppleWalletOutput(BaseTicketOutput):
         self.barcode_generator = barcode.UICBarcodeGenerator(self.event)
         self.vas_generator = vas.VASDataGenerator(self.event)
 
+    @property
+    def is_enabled(self):
+        if not self.signer:
+            return False
+        return self.settings.get('_enabled', as_type=bool)
+
     @cached_property
     def module_generators(self) -> list:
         from .signals import generate_apple_wallet_module
