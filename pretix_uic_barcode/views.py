@@ -167,6 +167,7 @@ def regenerate_tickets(event: Event):
     invalidate_cache.apply_async(kwargs={"event": event.pk, "provider": "pdf-uic"})
     invalidate_cache.apply_async(kwargs={"event": event.pk, "provider": "apple-wallet-uic"})
     invalidate_cache.apply_async(kwargs={"event": event.pk, "provider": "google-wallet-uic"})
+    invalidate_cache.apply_async(kwargs={"event": event.pk, "provider": "raw-uic"})
 
 
 @administrator_permission_required()

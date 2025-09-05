@@ -8,7 +8,8 @@ from pretix.base.signals import EventPluginSignal, register_ticket_secret_genera
     register_global_settings, order_approved, order_denied, order_expired, order_modified, order_changed, order_paid
 from pretix.control.signals import nav_event_settings
 from pretix.api.signals import orderposition_api_details
-from . import secrets, elements, event_settings, ticket_output, ticket_output_pdf, ticket_output_apple_wallet, ticket_output_google_wallet
+from . import secrets, elements, event_settings, ticket_output, ticket_output_pdf, ticket_output_apple_wallet, ticket_output_google_wallet, \
+    ticket_output_raw
 from .forms import AppleWalletCertificateFileField
 
 register_barcode_element_generators = EventPluginSignal()
@@ -78,6 +79,11 @@ def register_ticket_outputs_apple_wallet(sender, **kwargs):
 @receiver(register_ticket_outputs, dispatch_uid="ticket_output_uic_barcode_google_wallet")
 def register_ticket_outputs_google_wallet(sender, **kwargs):
     return ticket_output_google_wallet.GoogleWalletOutput
+
+
+@receiver(register_ticket_outputs, dispatch_uid="ticket_output_uic_barcode_raw")
+def register_ticket_outputs_raw(sender, **kwargs):
+    return ticket_output_raw.RawOutput
 
 
 @receiver(register_global_settings, dispatch_uid="uic_barcode_settings")
