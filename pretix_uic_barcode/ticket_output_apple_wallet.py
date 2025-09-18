@@ -416,7 +416,11 @@ class AppleWalletOutput(BaseTicketOutput):
         return f"pass_{self.event.slug}_{position.order.code}.pkpass", "application/vnd.apple.pkpass", pk_pass.get_buffer()
 
     def generate_order(self, order: Order) -> typing.Tuple[str, str, bytes]:
-        multi_pk_pass = pkpass.MultiPKPass()
-        for op in self.get_tickets_to_print(order):
-            multi_pk_pass.add_pkpass(self.generate_pass(op))
-        return f"passes_{self.event.slug}_{order.code}.pkpasses", "application/vnd.apple.pkpasses", multi_pk_pass.get_buffer()
+        passes = [self.generate_pass(op) for op in self.get_tickets_to_print(order)]
+        if len(passes) == 1:
+            return f"pass_{self.event.slug}_{order.code}.pkpass", "application/vnd.apple.pkpass", passes[0].get_buffer()
+        else:
+            multi_pk_pass = pkpass.MultiPKPass()
+            for p in passes:
+                multi_pk_pass.add_pkpass(p)
+            return f"passes_{self.event.slug}_{order.code}.pkpasses", "application/vnd.apple.pkpasses", multi_pk_pass.get_buffer()
