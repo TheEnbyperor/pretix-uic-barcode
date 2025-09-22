@@ -5,11 +5,11 @@ from django.urls import resolve, reverse
 from django.utils.translation import gettext_lazy as _
 from django import forms
 from pretix.base.signals import EventPluginSignal, register_ticket_secret_generators, register_ticket_outputs, api_event_settings_fields, \
-    register_global_settings, order_approved, order_denied, order_expired, order_modified, order_changed, order_paid
+    register_global_settings, order_approved, order_denied, order_expired, order_modified, order_changed, order_paid, register_text_placeholders
 from pretix.control.signals import nav_event_settings
 from pretix.api.signals import orderposition_api_details
 from . import secrets, elements, event_settings, ticket_output, ticket_output_pdf, ticket_output_apple_wallet, ticket_output_google_wallet, \
-    ticket_output_raw
+    ticket_output_raw, placeholders
 from .forms import AppleWalletCertificateFileField
 
 register_barcode_element_generators = EventPluginSignal()
@@ -132,3 +132,13 @@ def order_modified(sender, order, **kwargs):
 @receiver(order_changed, dispatch_uid="uic_barcode_order_changed")
 def order_changed(sender, order, **kwargs):
     ticket_output.update_ticket_output_all.apply_async(kwargs={"event": sender.pk, "order_pk": order.pk})
+
+
+@receiver(register_text_placeholders, dispatch_uid="google_wallet_order_placeholder")
+def register_placeholder_google_wallet_position(sender, **kwargs):
+    return placeholders.GoogleWalletOrderPositionPlaceholder()
+
+
+@receiver(register_text_placeholders, dispatch_uid="google_wallet_position_placeholder")
+def register_placeholder_google_wallet_order(sender, **kwargs):
+    return placeholders.GoogleWalletOrderPlaceholder()
