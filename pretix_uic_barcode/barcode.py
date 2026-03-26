@@ -6,6 +6,7 @@ import pathlib
 import asn1tools
 import inspect
 import datetime
+import urllib.parse
 from django.utils.functional import cached_property
 from pretix.base.models import OrderPosition
 from cryptography.hazmat.primitives import hashes
@@ -319,7 +320,12 @@ class UICBarcodeGenerator:
             return barcode_bytes
         elif self.event.settings.uic_barcode_encoding == "b41":
             barcode_ascii = base41_encode(barcode_bytes)
-            return f"{self.event.settings.uic_barcode_qr_url_prefix}$UIC:{barcode_ascii}".encode("ascii")
+            if self.event.settings.uic_barcode_qr_url_prefix:
+                url = urllib.parse.urlsplit(self.event.settings.uic_barcode_qr_url_prefix)
+                url_prefix = urllib.parse.urlunsplit((url.scheme.upper(), url.netloc.upper(), url.path, url.query, url.fragment))
+            else:
+                url_prefix = ""
+            return f"{url_prefix}$UIC:{barcode_ascii}".encode("ascii")
         elif self.event.settings.uic_barcode_encoding == "b45":
             barcode_ascii = base45.b45encode(barcode_bytes).decode("ascii")
             return f"UIC:B45:{barcode_ascii}".encode("ascii")
