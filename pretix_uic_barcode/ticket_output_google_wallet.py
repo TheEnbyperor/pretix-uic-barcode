@@ -308,7 +308,7 @@ class GoogleWalletOutput(BaseTicketOutput):
                     object_data["messages"].append(module_data)
 
         if self.event.settings.ticket_secret_generator == "uic-barcodes":
-            if self.event.settings.uic_barcode_encoding == "b45":
+            if self.event.settings.uic_barcode_encoding in ("b41", "b45"):
                 op_secret = self.barcode_generator.generate_barcode(position)
                 object_data["barcode"] = {
                     "type": "QR_CODE",

@@ -97,7 +97,7 @@ class Renderer(BaseRenderer):
         if content == 'secret':
             if self.event.settings.ticket_secret_generator == "uic-barcodes":
                 content = self.barcode_generator.generate_barcode(op)
-                barcode_type = "qr" if self.event.settings.uic_barcode_encoding == "b45" else "aztec"
+                barcode_type = "qr" if self.event.settings.uic_barcode_encoding in ("b41", "b45") else "aztec"
             else:
                 content = op.secret
                 barcode_type = "qr"

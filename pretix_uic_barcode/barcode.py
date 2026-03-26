@@ -1,4 +1,3 @@
-import base64
 import typing
 import base45
 import zlib
@@ -10,6 +9,7 @@ import datetime
 from django.utils.functional import cached_property
 from pretix.base.models import OrderPosition
 from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 from cryptography.hazmat.primitives.asymmetric.dsa import DSAPrivateKey
 from cryptography.hazmat.primitives.asymmetric.ec import ECDSA, EllipticCurvePrivateKey
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -18,7 +18,31 @@ from . import elements
 
 ROOT = pathlib.Path(__file__).parent
 BARCODE_HEADER = asn1tools.compile_files([ROOT / "asn1" / "uicBarcodeHeader_v2.0.1.asn"], codec="uper")
+BARCODE_MMTD_HEADER = asn1tools.compile_files([ROOT / "asn1" / "uicBarcodeHeader_v3.0.0.asn", ROOT / "asn1" / "uicGeneralData_v1.0.0.asn"], codec="uper")
 BARCODE_TOTP = asn1tools.compile_files([ROOT / "asn1" / "uicTotp.asn"], codec="uper")
+
+BASE41_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ$*-.:"
+
+def base41_encode(data: bytes) -> str:
+    output = ""
+
+    for i in range(0, len(data), 2):
+        x = data[i] + (256 * data[i + 1]) if i < len(data) - 1 else 0
+        output += BASE41_ALPHABET[x % 41]
+        x //= 41
+        output += BASE41_ALPHABET[x % 41]
+        output += BASE41_ALPHABET[x // 41]
+    return output
+
+def base41_decode(data: str) -> bytes:
+    output = bytearray()
+    if len(data) % 3 != 0:
+        return b""
+    for i in range(0, len(data), 3):
+        x = BASE41_ALPHABET.index(data[i]) + (41 * BASE41_ALPHABET.index(data[i + 1])) + (41 * 41 * BASE41_ALPHABET.index(data[i + 2]))
+        output.append(x % 256)
+        output.append(x // 256)
+    return bytes(output)
 
 
 class UICBarcodeGenerator:
@@ -85,12 +109,16 @@ class UICBarcodeGenerator:
                 },
             }
 
-            if self.event.settings.uic_barcode_security_provider_rics:
-                barcode_data["level2SignedData"]["level1Data"]["securityProviderNum"] = \
-                    int(self.event.settings.uic_barcode_security_provider_rics, 10)
-            elif self.event.settings.uic_barcode_security_provider_ia5:
+            if self.event.settings.uic_barcode_security_provider_org_code:
+                try:
+                    rics = int(self.event.settings.uic_barcode_security_provider_org_code, 10)
+                    barcode_data["level2SignedData"]["level1Data"]["securityProviderNum"] = rics
+                except ValueError:
+                    barcode_data["level2SignedData"]["level1Data"]["securityProviderIA5"] = \
+                        self.event.settings.uic_barcode_security_provider_org_code
+            elif self.event.settings.uic_barcode_security_provider_alt_code_value:
                 barcode_data["level2SignedData"]["level1Data"]["securityProviderIA5"] = \
-                    self.event.settings.uic_barcode_security_provider_ia5
+                    self.event.settings.uic_barcode_security_provider_alt_code_value
 
             for elm in barcode_elements:
                 if record_id := elm.dosipas_record_id():
@@ -113,15 +141,15 @@ class UICBarcodeGenerator:
                 while True:
                     totp_data = {
                         "padding": (b"\x00", totp_offset),
-                        "totp": "XXXXXXXX",
+                        "totp": b"XXXXXXXX",
                     }
                     barcode_data["level2SignedData"]["level2Data"] = {
                         "dataFormat": "_5101TOTP",
                         "data": BARCODE_TOTP.encode("PretixTotp", totp_data),
                     }
                     barcode_bytes = BARCODE_HEADER.encode("UicBarcodeHeader", barcode_data)
-                    if barcode_bytes.endswith(b"XXXXXXXX\x00"):
-                        barcode_bytes = barcode_bytes[:-9] + b"{totp_value_0}\x00"
+                    if barcode_bytes.endswith(b"XXXXXXXX"):
+                        barcode_bytes = barcode_bytes[:-8] + b"{totp_value_0}"
                         break
                     else:
                         totp_offset += 1
@@ -174,11 +202,124 @@ class UICBarcodeGenerator:
             barcode_bytes.extend(f"{len(compressed_contents):04d}".encode("ascii"))
             barcode_bytes.extend(compressed_contents)
 
+        elif self.event.settings.uic_barcode_format == "mmtd":
+            if self.event.settings.uic_barcode_security_provider_org_code:
+                company_code = ("orgCode", self.event.settings.uic_barcode_security_provider_org_code)
+            elif self.event.settings.uic_barcode_security_provider_alt_code_value:
+                company_code = ("otherCode", {
+                    "codeTable": self.event.settings.uic_barcode_security_provider_alt_code_table or "*PRETIX",
+                    "code": self.event.settings.uic_barcode_security_provider_alt_code_value,
+                })
+            else:
+                raise NotImplementedError()
+
+            inner_data = {
+                "data": []
+            }
+
+            for elm in barcode_elements:
+                if record_id := elm.dosipas_record_id():
+                    inner_data["data"].append({
+                        "dataFormat": record_id,
+                        "data": elm.record_content()
+                    })
+
+            tbs_inner_data = BARCODE_MMTD_HEADER.encode("BarcodeData", inner_data)
+
+            if isinstance(priv_key, DSAPrivateKey):
+                if priv_key.key_size == 1024:
+                    r, s = decode_dss_signature(priv_key.sign(tbs_inner_data, hashes.SHA1()))
+                    signature = ("dsa1", {
+                        "r": r.to_bytes(20, "big"),
+                        "s": s.to_bytes(20, "big"),
+                    })
+                elif priv_key.key_size == 2048:
+                    r, s = decode_dss_signature(priv_key.sign(tbs_inner_data, hashes.SHA256()))
+                    signature = ("dsa256", {
+                        "r": r.to_bytes(32, "big"),
+                        "s": s.to_bytes(32, "big"),
+                    })
+                else:
+                    raise NotImplementedError(f"Unsupported DSA key size: {priv_key.key_size}")
+            elif isinstance(priv_key, EllipticCurvePrivateKey):
+                if priv_key.curve.name == "secp256r1":
+                    r, s = decode_dss_signature(priv_key.sign(tbs_inner_data, ECDSA(hashes.SHA256())))
+                    signature = ("es256", {
+                        "r": r.to_bytes(32, "big"),
+                        "s": s.to_bytes(32, "big"),
+                    })
+                elif priv_key.curve.name == "secp256k1":
+                    r, s = decode_dss_signature(priv_key.sign(tbs_inner_data, ECDSA(hashes.SHA256())))
+                    signature = ("es256k", {
+                        "r": r.to_bytes(32, "big"),
+                        "s": s.to_bytes(32, "big"),
+                    })
+                elif priv_key.curve.name == "secp384":
+                    r, s = decode_dss_signature(priv_key.sign(tbs_inner_data, ECDSA(hashes.SHA384())))
+                    signature = ("es384", {
+                        "r": r.to_bytes(48, "big"),
+                        "s": s.to_bytes(48, "big"),
+                    })
+                elif priv_key.curve.name == "secp521":
+                    r, s = decode_dss_signature(priv_key.sign(tbs_inner_data, ECDSA(hashes.SHA512())))
+                    signature = ("es384", {
+                        "r": r.to_bytes(66, "big"),
+                        "s": s.to_bytes(66, "big"),
+                    })
+                else:
+                    raise NotImplementedError(f"Unsupported EC curve: {priv_key.curve.name}")
+            elif isinstance(priv_key, Ed25519PrivateKey):
+                signature = ("ed25519", priv_key.sign(tbs_inner_data))
+            else:
+                signature = ("none", None)
+
+            barcode_data = {
+                "format": b"U3",
+                "contents": {
+                    "level2Data": {
+                        "level1Data": {
+                            "key": {
+                                "securityProvider": company_code,
+                                "keyId": int(self.event.settings.uic_barcode_key_id, 10)
+                            },
+                            "barcodeData": ("standard", {
+                                "data": inner_data,
+                                "signature": signature,
+                            })
+                        },
+                        "level2Data": []
+                    }
+                }
+            }
+
+            if totp:
+                totp_offset = 0
+                while True:
+                    totp_data = {
+                        "padding": (b"\x00", totp_offset),
+                        "totp": b"XXXXXXXX",
+                    }
+                    barcode_data["contents"]["level2Data"]["level2Data"] = [{
+                        "dataFormat": "_5101TOTP",
+                        "data": BARCODE_TOTP.encode("PretixTotp", totp_data),
+                    }]
+                    barcode_bytes = BARCODE_MMTD_HEADER.encode("UICBarcodeHeader", barcode_data)
+                    if barcode_bytes.endswith(b"XXXXXXXX"):
+                        barcode_bytes = barcode_bytes[:-8] + b"{totp_value_0}"
+                        break
+                    else:
+                        totp_offset += 1
+            else:
+                barcode_bytes = BARCODE_MMTD_HEADER.encode("UICBarcodeHeader", barcode_data)
+
         else:
             raise NotImplementedError()
 
         if self.event.settings.uic_barcode_encoding == "raw":
             return barcode_bytes
+        elif self.event.settings.uic_barcode_encoding == "b41":
+            barcode_ascii = base41_encode(barcode_bytes)
+            return f"{self.event.settings.uic_barcode_qr_url_prefix}$UIC:{barcode_ascii}".encode("ascii")
         elif self.event.settings.uic_barcode_encoding == "b45":
             barcode_ascii = base45.b45encode(barcode_bytes).decode("ascii")
             return f"UIC:B45:{barcode_ascii}".encode("ascii")

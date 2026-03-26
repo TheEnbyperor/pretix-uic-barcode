@@ -1,0 +1,134 @@
+ASN-Module-Header { iso(1) identified-organization(3) dod(6)
+    internet(1) private(4) enterprise(1) uic(17218) fcb(1) modules(0) header(1) v3(3) 0 }
+    DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+-- imports and exports
+-- EXPORTS ALL;
+
+IMPORTS CompanyCode, Data, Timestamp
+ FROM ASN-Module-GeneralData { iso(1) identified-organization(3) dod(6) internet(1) private(4) enterprise(1) uic(17218) fcb(1) modules(0) general(5) v1(1) 0 };
+
+-- ##############################################################################################
+-- # UIC barcode header - version 3.0.0
+-- #
+-- # Naming and encoding conventions
+-- #   - A bar code which is only static (printed on a paper), and for which the security is in the system,
+-- #      does not need any of these elements.
+-- #   - A bar code which is only static, and includes its own security, needs:
+-- #  	  level1Signature
+-- #      level1KeyAlg and level1SigningAlg if the associated key does not make this evident
+-- #   - A dynamic bar code including static and dynamic signatures needs the same elements as a static bar code, plus:
+-- #	  level2PublicKey, and level2Signature
+-- #      level2SigningAlg and level2keyAlg if not evident
+-- #
+-- # The maximum size of a barcode is, per the Aztec specification ISO 24778, limited to 1914 bytes.
+-- ##############################################################################################
+
+-- The basic entry point of the barcode
+UICBarcodeHeader ::= SEQUENCE {
+    -- This field SHALL be set to the byte string "U3".
+    -- This results in the version 3 header being prefixed with U3 at the start, allowing identification of this
+    --  format of barcode header.
+    format      OCTET STRING (SIZE(2)),
+    contents    Contents
+}
+
+Contents ::= SEQUENCE {
+    level2Data      Level2Data,
+    -- The signature is calculated over the canonical unaligned PER (CUPER) encoding of level2Data
+    level2Signature Signature   OPTIONAL
+}
+
+Level2Data ::= SEQUENCE {
+    level1Data  Level1Data,
+    -- Dynamic Content Data goes here
+    level2Data  SEQUENCE SIZE(0..7) OF Data
+}
+
+Level1Data ::= SEQUENCE {
+    -- provider of the level 1 signature
+    key                     SEQUENCE {
+        securityProvider    CompanyCode,
+        keyId               INTEGER (0..99999)
+    } OPTIONAL,
+
+    endEntityCertificate    SignedData{EndEntityCertificate}    OPTIONAL, -- Must be left unset, format to be decided upon at a later date
+    barcodeData             SignedData{BarcodeData}                       -- Must use the standard variety, message recovery format to be decided upon at a later date
+}
+
+SignedData{DataType} ::= CHOICE {
+    standard        SEQUENCE {
+        data                DataType,
+        -- The signature is calculated over the canonical unaligned PER (CUPER) encoding of data
+        signature           Signature
+    },
+    messageRecovery MessageRecoverySignature
+}
+
+-- Values taken from the JSON Web Signature and Encryption Algorithm registry
+-- https://www.iana.org/assignments/jose/jose.xhtml#web-signature-encryption-algorithms
+Signature ::= CHOICE {
+    es256   DSSSignature{32}, -- ECDSA using P-256 and SHA-256
+    es256k  DSSSignature{32}, -- ECDSA using secp256k1 curve and SHA-256
+    es384   DSSSignature{48}, -- ECDSA using P-384 and SHA-384
+    es512   DSSSignature{66}, -- ECDSA using P-521 and SHA-512
+    ed25519 OCTET STRING (SIZE (64)),
+    ed448   OCTET STRING (SIZE (114)),
+    hs256   OCTET STRING (SIZE (32)), -- HMAC using SHA-256, not permitted except by bilateral agreement
+    hs384   OCTET STRING (SIZE (48)), -- HMAC using SHA-384, not permitted except by bilateral agreement
+    hs512   OCTET STRING (SIZE (64)), -- HMAC using SHA-512, not permitted except by bilateral agreement
+    dsa1    DSSSignature{20}, -- DSA-1024 using SHA-1, not recommended for new deployments
+    dsa224  DSSSignature{32}, -- DSA-2048 using SHA-224, not recommended for new deployments
+    dsa256  DSSSignature{32}, -- DSA-2048 using SHA-256, not recommended for new deployments
+    none    NULL, -- only permitted when no security is required
+    other   SEQUENCE {
+        algId       OBJECT IDENTIFIER,
+        signature   OCTET STRING
+    },
+    ...
+}
+
+DSSSignature{INTEGER: len} ::= SEQUENCE {
+    r OCTET STRING (SIZE(len)),
+    s OCTET STRING (SIZE(len))
+}
+
+PublicKey ::= CHOICE {
+    nistP256    ECPublicKey{32},
+    secp256K1   ECPublicKey{32},
+    nistP384    ECPublicKey{48},
+    nistP521    ECPublicKey{66},
+    ed25519     OCTET STRING (SIZE (32)),
+    ed448       OCTET STRING (SIZE (57)),
+    other       OCTET STRING, -- DER encoded SubjectPublicKeyInfo
+    ...
+}
+
+ECPublicKey{INTEGER: len} ::= SEQUENCE {
+    x OCTET STRING (SIZE(len)),
+    yIsOdd BOOLEAN
+}
+
+-- Purposefully left blank, format to be decided upon at a later date
+MessageRecoverySignature ::= NULL
+-- Purposefully left blank, format to be decided upon at a later date
+EndEntityCertificate ::= NULL
+
+BarcodeData ::= SEQUENCE {
+    -- This field MUST contain at most one well-known UIC data type (e.g. FCBn)
+    data                SEQUENCE SIZE(1..16) OF Data,
+
+    level2PublicKey     PublicKey                       OPTIONAL,
+
+    -- End of the validity of the barcode.
+    -- After this date and time the bar code needs to be regenerated by the provider of the ticket.
+    -- The provider of the bar code should ensure that the endOfValidity given here does not exceed the validity of the key pair used on level 2.
+    endOfValidity       Timestamp                       OPTIONAL,
+
+    -- Validity duration in seconds of the barcode with reference to the time stamp in the dynamic content data
+   	validityDuration    INTEGER (1..3600)               OPTIONAL,
+
+   	...
+}
+
+END

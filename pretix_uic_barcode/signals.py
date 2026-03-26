@@ -58,7 +58,7 @@ def navbar_settings(sender, request, **kwargs):
 
 @receiver(register_barcode_element_generators, dispatch_uid="barcode_element_generator_pretix_data")
 def uic_element_generator(sender, **kwargs):
-    return [elements.PretixDataBarcodeElementGenerator]
+    return [elements.PretixDataBarcodeElementGenerator, elements.PretixOrderDataElementGenerator]
 
 
 @receiver(register_vas_element_generators, dispatch_uid="vas_element_generator_pretix_data")

@@ -62,6 +62,20 @@ class PretixDataVASElement(VASElement):
         return BARCODE_CONTENT.encode("VASPretixTicket", self.data)
 
 
+class PretixOrderDataBarcodeElement(UICBarcodeElement):
+    def __init__(self, data: typing.Dict):
+        self.data = data
+
+    def tlb_record_id(self):
+        return "5101PO"
+
+    def dosipas_record_id(self):
+        return "_5101PTXO"
+
+    def record_content(self) -> bytes:
+        return BARCODE_CONTENT.encode("PretixOrder", self.data)
+
+
 class BaseBarcodeElementGenerator(abc.ABC):
     def __init__(self, event):
         self.event = event
@@ -150,3 +164,22 @@ class PretixDataBarcodeElementGenerator(BaseBarcodeElementGenerator, BaseVASElem
             ticket_data["validUntilTime"] = valid_until[2]
 
         return PretixDataVASElement(ticket_data)
+
+class PretixOrderDataElementGenerator(BaseBarcodeElementGenerator):
+    def generate_element(
+            self, order_position: OrderPosition,
+    ) -> typing.Optional[PretixOrderDataBarcodeElement]:
+        if self.event.settings.uic_barcode_order_data_in_barcode:
+            ticket_data = {
+                "organiserSlug": self.event.organizer.slug,
+                "eventSlug": self.event.slug,
+                "orderCode": order_position.order.code,
+                "orderPosition": order_position.positionid,
+            }
+            if self.event.settings.uic_barcode_order_secret_in_barcode:
+                ticket_data["orderSecret"] = order_position.order.secret
+            if self.event.settings.uic_barcode_order_position_secret_in_barcode:
+                ticket_data["orderPositionSecret"] = order_position.web_secret
+            return PretixOrderDataBarcodeElement(ticket_data)
+        else:
+            return None

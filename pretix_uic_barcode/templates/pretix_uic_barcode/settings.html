@@ -10,12 +10,23 @@
             <legend>{% trans "General" %}</legend>
             {% bootstrap_field form.uic_barcode_format layout="control" %}
             {% bootstrap_field form.uic_barcode_encoding layout="control" %}
+            {% bootstrap_field form.uic_barcode_qr_url_prefix layout="control" %}
+            {% bootstrap_field form.uic_barcode_order_data_in_barcode layout="control" %}
+            {% bootstrap_field form.uic_barcode_order_secret_in_barcode layout="control" %}
+            {% bootstrap_field form.uic_barcode_order_position_secret_in_barcode layout="control" %}
         </fieldset>
         <fieldset>
             <legend>{% trans "Security Provider" %}</legend>
-            <p>{% trans "Only one of these is required" %}</p>
-            {% bootstrap_field form.uic_barcode_security_provider_rics layout="control" %}
-            {% bootstrap_field form.uic_barcode_security_provider_ia5 layout="control" %}
+            <p>{% trans "Only one of the following options is required." %}</p>
+            <h4>ERA Organisation Code or UIC RICS</h4>
+            {% bootstrap_field form.uic_barcode_security_provider_org_code layout="control" %}
+            <h4>Alternative Company Code Table</h4>
+            <p>
+                Use this if you don't have a ERA Organisation Code nor a RICS.
+                See the <a href=\"https://github.com/UnionInternationalCheminsdeFer/UIC-barcode/tree/master/registers" target="_blank">UIC's GitHub</a> for registration procedures.
+            </p>
+            {% bootstrap_field form.uic_barcode_security_provider_alt_code_table layout="control" %}
+            {% bootstrap_field form.uic_barcode_security_provider_alt_code_value layout="control" %}
         </fieldset>
         <fieldset>
             <legend>{% trans "Signing" %}</legend>

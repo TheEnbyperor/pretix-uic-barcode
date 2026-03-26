@@ -204,7 +204,7 @@ class AppleWalletOutput(BaseTicketOutput):
 
         if self.event.settings.ticket_secret_generator == "uic-barcodes":
             op_secret = self.barcode_generator.generate_barcode(position)
-            if self.event.settings.uic_barcode_encoding == "b45":
+            if self.event.settings.uic_barcode_encoding in ("b14", "b45"):
                 pass_json["barcodes"].append({
                     "format": "PKBarcodeFormatQR",
                     "message": op_secret.decode("utf-8"),

@@ -21,16 +21,25 @@ class UICPublicKeyField(serializers.Field):
 
     @staticmethod
     def to_representation(value):
-        return value.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode()
+        return base64.b64encode(value.public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)).decode()
 
 
 class UICSecurityProviderField(serializers.Field):
     @staticmethod
     def get_attribute(instance):
-        if instance.uic_barcode_security_provider_rics:
-            return int(instance.uic_barcode_security_provider_rics, 10)
+        if instance.uic_barcode_security_provider_org_code:
+            return {
+                "type": "org-code",
+                "org_code": instance.uic_barcode_security_provider_org_code,
+            }
+        elif instance.uic_barcode_security_provider_alt_code_value:
+            return {
+                "type": "alt-code",
+                "table": instance.uic_barcode_security_provider_alt_code_table or "*PRETIX",
+                "value": instance.uic_barcode_security_provider_alt_code_value,
+            }
         else:
-            return instance.uic_barcode_security_provider_ia5
+            return None
 
     @staticmethod
     def to_representation(value):

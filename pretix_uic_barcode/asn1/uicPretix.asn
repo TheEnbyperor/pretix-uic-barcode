@@ -1,13 +1,13 @@
 ASN-Module-Pretix DEFINITIONS AUTOMATIC TAGS ::= BEGIN
 
     PretixTicket ::= SEQUENCE {
-		uniqueId IA5String (SIZE (1..255)),
+		uniqueId VisibleString (SIZE (1..255)),
 
 		orderYear INTEGER (2016..2269),
 		orderDay INTEGER (1..366),
 		orderTime INTEGER (0..1440),
 
-   		eventSlug IA5String (SIZE (1..50) ^ FROM ("a".."z"|"A".."Z"|"0".."9"|"."|"-")),
+   		eventSlug VisibleString (SIZE (1..50) ^ FROM ("a".."z"|"A".."Z"|"0".."9"|"."|"-")),
 		itemId INTEGER,
 		subeventId INTEGER OPTIONAL,
 		variationId INTEGER OPTIONAL,
@@ -26,11 +26,20 @@ ASN-Module-Pretix DEFINITIONS AUTOMATIC TAGS ::= BEGIN
 
 		...
 	}
+	
+	PretixOrder ::= SEQUENCE {
+		organiserSlug VisibleString (SIZE (1..50) ^ FROM ("a".."z"|"A".."Z"|"0".."9"|"."|"-")),
+		eventSlug VisibleString (SIZE (1..50) ^ FROM ("a".."z"|"A".."Z"|"0".."9"|"."|"-")),
+		orderCode VisibleString (SIZE (1..16) ^ FROM ("ABCDEFGHJKLMNPQRSTUVWXYZ379")),
+		orderPosition INTEGER,
+		orderPositionSecret VisibleString (SIZE (1..32) ^ FROM ("a".."z"|"0".."9")) OPTIONAL,
+		orderSecret VisibleString (SIZE (1..32) ^ FROM ("a".."z"|"0".."9")) OPTIONAL
+	}
 
 	VASPretixTicket ::= SEQUENCE {
-		uniqueId IA5String (SIZE (1..255)),
+		uniqueId VisibleString (SIZE (1..255)),
 
-		eventSlug IA5String (SIZE (1..50) ^ FROM ("a".."z"|"A".."Z"|"0".."9"|"."|"-")),
+		eventSlug VisibleString (SIZE (1..50) ^ FROM ("a".."z"|"A".."Z"|"0".."9"|"."|"-")),
 		itemId INTEGER,
 		subeventId INTEGER OPTIONAL,
 		variationId INTEGER OPTIONAL,

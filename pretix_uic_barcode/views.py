@@ -1,9 +1,9 @@
+import string
 from django import forms
 from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.core.exceptions import ValidationError
-from django.core.validators import MaxValueValidator, MinValueValidator
 from pretix.base.forms import SettingsForm, SecretKeySettingsField, SECRET_REDACTED
 from pretix.base.models import Event
 from pretix.base.services.tickets import invalidate_cache
@@ -44,6 +44,7 @@ class UICBarcodeSettingsForm(SettingsForm):
         choices=(
             ('tlb', _("TLB envelope")),
             ('dosipas', _("DOSIPAS envelope")),
+            ('mmtd', _("MMTD envelope (beta)")),
         ),
         required=True
     )
@@ -52,22 +53,42 @@ class UICBarcodeSettingsForm(SettingsForm):
         widget=forms.RadioSelect,
         choices=(
             ('raw', _("Raw bytes - for Aztec barcodes")),
-            ('b45', _("Base45 encoded - for QR codes")),
+            ('b41', _("Base41 encoded - for QR codes, with optional URL prefix")),
+            ('b45', _("Base45 encoded - for QR codes (non-standard)")),
         ),
         required=True
     )
-    uic_barcode_security_provider_rics = forms.IntegerField(
-        label=_("Security provider RICS"),
-        validators=[
-            MinValueValidator(0),
-            MaxValueValidator(32000),
-        ],
+    uic_barcode_qr_url_prefix = forms.URLField(
+        label=_("QR Code URL prefix"),
+        required=False,
+        help_text=_("This field only has an effect on Base41 encoded QR codes. An all caps URL is recommended for QR encoding efficiency."),
+    )
+    uic_barcode_order_data_in_barcode = forms.BooleanField(
+        label=_("Order data in barcode"),
         required=False,
     )
-    uic_barcode_security_provider_ia5 = forms.CharField(
-        label=_("Security provider IA5"),
+    uic_barcode_order_secret_in_barcode = forms.BooleanField(
+        label=_("Order secret in barcode"),
         required=False,
-        help_text=_("Use this if you don't have a RICS, you should pick a value that's unlikely to result in a collision."),
+        help_text=_("Warning: this will put the secret required to edit the whole order in the ticket barcode.")
+    )
+    uic_barcode_order_position_secret_in_barcode = forms.BooleanField(
+        label=_("Order position secret in barcode"),
+        required=False,
+        help_text=_("Warning: this will put the secret required to edit the order position in the ticket barcode.")
+    )
+    uic_barcode_security_provider_org_code = forms.CharField(
+        label=_("ERA Organisation Code/RICS"),
+        required=False,
+    )
+    uic_barcode_security_provider_alt_code_table = forms.CharField(
+        label=_("Alternate code table"),
+        required=False,
+        help_text=_("Leave blank for an entirely private organisation code."),
+    )
+    uic_barcode_security_provider_alt_code_value = forms.CharField(
+        label=_("Alternate value"),
+        required=False,
     )
     uic_barcode_key_id = forms.CharField(
         label=_("Signing key ID"),
@@ -80,13 +101,28 @@ class UICBarcodeSettingsForm(SettingsForm):
         help_text=_("DSA, ECDSA, or Ed25519 private key in PEM format"),
     )
 
-    def clean_uic_barcode_security_provider_ia5(self):
-        if not all(ord(c) < 128 for c in self.cleaned_data["uic_barcode_security_provider_ia5"]):
-            raise ValidationError(_("Security provider IA5 contains invalid characters"))
-        return self.cleaned_data["uic_barcode_security_provider_ia5"]
+    def clean_uic_barcode_security_provider_org_code(self):
+        alphabet = string.ascii_uppercase + string.digits
+        if self.cleaned_data["uic_barcode_security_provider_org_code"] and len(self.cleaned_data["uic_barcode_security_provider_org_code"]) != 4:
+            raise ValidationError(_("Security provider code must be exactly 4 characters."))
+        if not all(c in alphabet for c in self.cleaned_data["uic_barcode_security_provider_org_code"]):
+            raise ValidationError(_("Security provider code contains invalid characters."))
+        return self.cleaned_data["uic_barcode_security_provider_org_code"]
+
+    def clean_uic_barcode_security_provider_alt_code_table(self):
+        if len(self.cleaned_data["uic_barcode_security_provider_alt_code_table"]) > 16:
+            raise ValidationError(_("Security provider alternate code table must be no more than 16 characters."))
+        if not all(32 <= ord(c) <= 126 for c in self.cleaned_data["uic_barcode_security_provider_alt_code_table"]):
+            raise ValidationError(_("Security provider alternate code table contains invalid characters."))
+        return self.cleaned_data["uic_barcode_security_provider_alt_code_table"]
+
+    def clean_uic_barcode_security_provider_alt_code_value(self):
+        if not all(32 <= ord(c) <= 126 for c in self.cleaned_data["uic_barcode_security_provider_alt_code_value"]):
+            raise ValidationError(_("Security provider alternate code value contains invalid characters"))
+        return self.cleaned_data["uic_barcode_security_provider_alt_code_value"]
 
     def clean_uic_barcode_key_id(self):
-        if not all(ord(c) < 128 for c in self.cleaned_data["uic_barcode_key_id"]):
+        if not all(32 <= ord(c) <= 126 for c in self.cleaned_data["uic_barcode_key_id"]):
             raise ValidationError(_("Key ID contains invalid characters"))
         return self.cleaned_data["uic_barcode_key_id"]
 
@@ -102,26 +138,34 @@ class UICBarcodeSettingsForm(SettingsForm):
         if not isinstance(pk, DSAPrivateKey) and not isinstance(pk, EllipticCurvePrivateKey) and not isinstance(pk, Ed25519PrivateKey):
             raise ValidationError(_("Must be a DSA, ECDSA, or Ed25519 private key"))
 
+        if isinstance(pk, DSAPrivateKey):
+            if pk.key_size not in (1024, 2048):
+                raise ValidationError(_("DSA key must be 1024-bit or 2048-bit"))
+
         return pk.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()).decode()
 
     def clean(self):
-        if not self.cleaned_data.get("uic_barcode_security_provider_rics") and not self.cleaned_data.get("uic_barcode_security_provider_ia5"):
-            raise ValidationError(_("One of security provider RICS or IA5 is required"))
-        if self.cleaned_data.get("uic_barcode_security_provider_rics") and self.cleaned_data.get("uic_barcode_security_provider_ia5"):
-            raise ValidationError(_("Only one of security provider RICS or IA5 is permitted"))
+        if not self.cleaned_data.get("uic_barcode_security_provider_org_code") and not \
+                self.cleaned_data.get("uic_barcode_security_provider_alt_code_value"):
+            raise ValidationError(_("One of security provider Organisation Code/RICS or alternate code is required."))
+        if self.cleaned_data.get("uic_barcode_security_provider_org_code") and (
+                self.cleaned_data.get("uic_barcode_security_provider_alt_code_table") or
+                self.cleaned_data.get("uic_barcode_security_provider_alt_code_value")
+        ):
+            raise ValidationError(_("Only one of security provider Organisation Code/RICS or alternate code is permitted."))
+
+        if self.cleaned_data.get("uic_barcode_security_provider_alt_code_table") and not \
+                self.cleaned_data.get("uic_barcode_security_provider_alt_code_value"):
+            raise ValidationError(_("Alternate code table and value must both me set."))
 
         if self.cleaned_data["uic_barcode_format"] == "tlb":
-            if not self.cleaned_data.get("uic_barcode_security_provider_rics"):
+            if not self.cleaned_data.get("uic_barcode_security_provider_org_code"):
                 raise ValidationError({
-                    "uic_barcode_security_provider_rics": _("A security provider RICS is required for TLB barcodes"),
-                })
-            if self.cleaned_data["uic_barcode_security_provider_rics"] > 9999:
-                raise ValidationError({
-                    "uic_barcode_security_provider_rics": _("Security provider RICS must be less than or equal to 9999 in TLB barcodes")
+                    "uic_barcode_security_provider_org_code": _("A security provider Organisation Code/RICS is required for TLB barcodes."),
                 })
             if len(self.cleaned_data["uic_barcode_key_id"]) > 5:
                 raise ValidationError({
-                    "uic_barcode_key_id": _("Key ID must be less than or equal to 5 characters long in TLB barcodes"),
+                    "uic_barcode_key_id": _("Key ID must be no more than 5 characters long in TLB barcodes"),
                 })
 
             pk_pem = self.cleaned_data["uic_barcode_private_key"] if self.cleaned_data["uic_barcode_private_key"] != SECRET_REDACTED else self.obj.settings.uic_barcode_private_key
@@ -130,7 +174,8 @@ class UICBarcodeSettingsForm(SettingsForm):
                 raise ValidationError({
                     "uic_barcode_private_key": _("TLB barcodes require a DSA private key"),
                 })
-        elif self.cleaned_data["uic_barcode_format"] == "dosipas":
+
+        elif self.cleaned_data["uic_barcode_format"] in ("dosipas", "mmtd"):
             try:
                 key_id = int(self.cleaned_data["uic_barcode_key_id"], 10)
                 if key_id < 0 or key_id > 99999:
@@ -139,7 +184,7 @@ class UICBarcodeSettingsForm(SettingsForm):
                     })
             except ValueError:
                 raise ValidationError({
-                    "uic_barcode_key_id": _("Key ID must be an integer for DOSIPAS barcodes"),
+                    "uic_barcode_key_id": _("Key ID must be an integer for non-TLB barcodes"),
                 })
 
 
