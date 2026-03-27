@@ -29,7 +29,7 @@ from . import pkpass, ticket_output_apple_wallet, models
 
 
 class KeySerializer(serializers.Serializer):
-    security_provider = serializers.CharField()
+    security_provider = serializers.DictField()
     key_id = serializers.CharField()
     public_key = serializers.CharField()
 
@@ -49,16 +49,31 @@ class UICKeyViewSet(viewsets.ViewSet):
             if not event.settings.uic_barcode_key_id:
                 continue
             else:
-                key_id = (event.settings.uic_barcode_security_provider_rics or event.settings.uic_barcode_security_provider_ia5, event.settings.uic_barcode_key_id)
-                if key_id in seen_keys:
+                if event.settings.uic_barcode_security_provider_org_code:
+                    key_id = {
+                        "type": "org-code",
+                        "org_code": event.settings.uic_barcode_security_provider_org_code,
+                    }
+                elif event.settings.uic_barcode_security_provider_alt_code_value:
+                    key_id = {
+                        "type": "alt-code",
+                        "table": event.settings.uic_barcode_security_provider_alt_code_table or "*PRETIX",
+                        "value": event.settings.uic_barcode_security_provider_alt_code_value,
+                    }
+                else:
+                    return None
+                k = (tuple(key_id.items()), event.settings.uic_barcode_key_id)
+                if k in seen_keys:
                     continue
-                seen_keys.add(key_id)
+                seen_keys.add(k)
 
                 keys.append({
-                    "security_provider": key_id[0],
-                    "key_id": key_id[1],
-                    "public_key": load_pem_private_key(event.settings.uic_barcode_private_key.encode(), None).public_key()
-                        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode()
+                    "security_provider": key_id,
+                    "key_id": event.settings.uic_barcode_key_id,
+                    "public_key": base64.b64encode(
+                        load_pem_private_key(event.settings.uic_barcode_private_key.encode(), None).public_key()
+                        .public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+                    ).decode()
                 })
 
         s = KeysSerializer(instance={
