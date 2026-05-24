@@ -14,7 +14,9 @@ class AppleWalletPass(models.Model):
 
     class Meta:
         unique_together = (('pass_type_id', 'pass_serial'),)
-        index_together = (('pass_type_id', 'pass_serial'),)
+        indexes = (
+            models.Index(fields=('pass_type_id', 'pass_serial')),
+        )
 
 
 class AppleDevice(models.Model):
