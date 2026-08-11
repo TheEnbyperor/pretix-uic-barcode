@@ -1,7 +1,7 @@
 import abc
 import base64
 import json
-import niquests
+import requests
 import logging
 import datetime
 import dataclasses
@@ -271,7 +271,7 @@ class GooglePayRootStore:
 
     @cached_property
     def root_keys(self):
-        r = niquests.get(self.ROOT_KEYS_URL)
+        r = requests.get(self.ROOT_KEYS_URL)
         r.raise_for_status()
         keys = r.json()["keys"]
         return [GooglePayRootKey(

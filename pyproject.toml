@@ -18,7 +18,7 @@ dependencies = [
     "base45",
     "ber-tlv",
     "aztec-code-generator",
-    "niquests",
+    "requests",
     "cryptography",
     "idna",
     "google-api-python-client",

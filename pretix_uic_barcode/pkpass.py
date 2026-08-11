@@ -20,7 +20,7 @@ import cryptography.hazmat.primitives.asymmetric.ec
 import cryptography.hazmat.primitives.serialization
 import cryptography.hazmat.primitives.serialization.pkcs7
 import cryptography.x509.oid
-import niquests
+import requests
 from django.contrib.staticfiles import finders
 from django.core.files import File
 from pretix.base.settings import GlobalSettingsObject
@@ -38,7 +38,7 @@ WWDR_G4_NAME = cryptography.x509.Name.from_rfc4514_string(
     "C=US,O=Apple Inc.,OU=G4,CN=Apple Worldwide Developer Relations Certification Authority")
 
 
-SESSION = niquests.Session(happy_eyeballs=True, timeout=5)
+SESSION = requests.Session()
 
 class PKPassSigner:
     team_id: str
@@ -198,7 +198,7 @@ class PKPass:
         r = SESSION.post(TSP_URL, headers={
             "Content-Type": "application/timestamp-query",
             "User-Agent": f"Pretix-UIC-Barcode/{__version__}",
-        }, data=timestamp_req.dump())
+        }, data=timestamp_req.dump(), timeout=5)
         r.raise_for_status()
         if r.headers["Content-Type"] != "application/timestamp-reply":
             raise ValueError("Unexpected content type reply from timestamping server")

@@ -1,4 +1,4 @@
-import niquests
+import requests
 from pretix.base.models import Order, OrderPosition, Event
 from pretix.base.services.tasks import EventTask
 from pretix.base.settings import GlobalSettingsObject
@@ -6,7 +6,7 @@ from pretix.celery_app import app
 
 from . import ticket_output_google_wallet, ticket_output_apple_wallet, models
 
-SESSION = niquests.Session(happy_eyeballs=True)
+SESSION = requests.Session()
 
 def notify_apple_device(device: models.AppleDevice):
     gs = GlobalSettingsObject()

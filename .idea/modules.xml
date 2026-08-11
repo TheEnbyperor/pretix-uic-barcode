@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/pretix-dosipas.iml" filepath="$PROJECT_DIR$/.idea/pretix-dosipas.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/pretix-uic-barcode.iml" filepath="$PROJECT_DIR$/.idea/pretix-uic-barcode.iml" />
     </modules>
   </component>
 </project>
