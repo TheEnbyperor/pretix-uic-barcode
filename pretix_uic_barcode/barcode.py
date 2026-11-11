@@ -186,7 +186,7 @@ class UICBarcodeGenerator:
             s = signature_tlv[0][1][1][1]
 
             barcode_bytes = bytearray(b"#UT02")
-            signing_rics = int(self.event.settings.uic_barcode_security_provider_rics, 10)
+            signing_rics = int(self.event.settings.uic_barcode_security_provider_org_code, 10)
             assert len(self.event.settings.uic_barcode_key_id) <= 5
             barcode_bytes.extend(f"{signing_rics:04d}".encode("ascii"))
             try:
